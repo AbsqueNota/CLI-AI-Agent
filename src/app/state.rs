@@ -6,7 +6,7 @@ use crate::{
     agent::AgentFactory, 
     dto::{CallRecord, CallsStats, ChatSession, SavedModelProfile}, 
     models::{Model, ModelRegistry,}, 
-    provider::LlmProvider, 
+    provider::{LlmProvider, ProviderFactory}, 
     storage::StorageManager,
     app::config::AppConfig,
 };
@@ -95,6 +95,86 @@ impl AppState {
         self.agent = agent;
         Ok(())
     }
+
+    pub async fn switch_provider(
+        &mut self,
+        provider_name: &str,
+    ) -> Result<()> {
+        let provider_name = provider_name.to_lowercase();
+    
+        if provider_name == self.provider.id() {
+            return Ok(());
+        }
+    
+        // Save current provider/model configuration before switching.
+        self.persist_config()?;
+    
+        // Initialize the new provider.
+        let new_provider = ProviderFactory::create(&provider_name)?;
+    
+        // Load models from the new provider.
+        let mut new_registry = ModelRegistry::load(&new_provider)
+            .await
+            .map_err(anyhow::Error::msg)?;
+    
+        // Restore saved profiles for this provider.
+        for model in new_registry.get_all_models_mut() {
+            if let Some(profile) = self.config.get_model_profile(
+                &model.provider,
+                &model.id,
+            ) {
+                model.sync_with_profile(profile);
+            }
+        }
+    
+        // Try to restore the previously selected model ID.
+        // If it does not exist for this provider, use the first available model.
+        let selected_model = self.config.initial_model
+            .as_deref()
+            .and_then(|model_id| {
+                new_registry.get_by_key(
+                    new_provider.id(),
+                    model_id,
+                )
+            })
+            .or_else(|| new_registry.first())
+            .cloned()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "No models available for provider '{}'",
+                    provider_name
+                )
+            })?;
+    
+        // Build the new agent before changing the active state.
+        let new_agent = AgentFactory::build(
+            &new_provider,
+            &selected_model,
+        )?;
+    
+        // Prepare and persist the new configuration.
+        let mut new_config = self.config.clone();
+    
+        let profile = SavedModelProfile::from(&selected_model);
+    
+        new_config.upsert_model_profile(
+            new_provider.id(),
+            &selected_model.id,
+            profile,
+        );
+    
+        self.storage.save_config(&new_config)?;
+    
+        // Apply the new state only after initialization succeeds.
+        self.provider = new_provider;
+        self.registry = new_registry;
+        self.current_model = selected_model;
+        self.agent = new_agent;
+        self.config = new_config;
+    
+        Ok(())
+    }
+
     pub async fn switch_model(&mut self, model_id: &str) -> Result<()> {
         let key = format!("{}/{}", self.provider.id(), model_id);
 

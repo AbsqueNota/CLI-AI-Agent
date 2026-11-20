@@ -3,6 +3,8 @@ pub mod snippets;
 use anyhow::{Result};
 use crate::app::state::AppState;
 use super::commands::snippets::{
+    settings_menu,
+    select_provider,
     new_session,
     undo_last_turn,
     clear_history,
@@ -11,7 +13,6 @@ use super::commands::snippets::{
     show_models,
     select_model,
     show_capabilities,
-    show_settings,
     handle_set_command,
     help,
 };
@@ -27,18 +28,23 @@ pub async fn execute_command(
 
     let result: Result<String> = async {
         let msg = match cmd {
+            // ---- Settings ----
+            "/settings"     | "/cfg"    => settings_menu(state).await?,
+            "/set"          | "/s"      => handle_set_command(state, arg1, arg2)?,
+
+            // ---- Provider ----
+            "/provider"     | "/p"      => select_provider(state).await?,
+            
             // ---- Sessions and history ----
-            "/new"                      => new_session(state)?,
+            "/new"          | "/n"      => new_session(state)?,
             "/sessions"     | "/ss"     => manage_sessions(state)?,
             "/undo"         | "/u"      => undo_last_turn(state)?,
             "/clear"        | "/cl"     => clear_history(state)?,
 
-            // ---- Models and settings ----
+            // ---- Models ----
             "/models"       | "/ms"     => show_models(state),
             "/model"        | "/m"      => select_model(state).await?,
-            "/capabilities" | "/cp"     => show_capabilities(state),
-            "/settings"     | "/cfg"    => show_settings(&state.current_model),
-            "/set"          | "/s"      => handle_set_command(state, arg1, arg2)?,
+            "/capabilities" | "/cp"     => show_capabilities(state),            
 
             // ---- Statistics and reference information ----
             "/stats"        | "/st"     => prepare_report(state.stats.format_calls()),

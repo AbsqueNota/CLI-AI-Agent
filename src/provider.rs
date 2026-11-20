@@ -1,5 +1,7 @@
 pub mod ollama;
 pub mod openai;
+pub mod openrouter;
+pub mod open_compatible;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -15,6 +17,8 @@ use crate::{
     dto::CallRecord,
     provider::{
         ollama::OllamaProvider,
+        openai::OpenAiProvider,
+        openrouter::OpenRouterProvider,
     }
 };
 
@@ -30,15 +34,19 @@ pub trait LlmProvider: Send + Sync {
 pub struct ProviderFactory;
 
 impl ProviderFactory {
+    pub fn available() -> &'static [&'static str] {
+        &["ollama", "openai", "openrouter"]
+    }
     pub fn create(provider_name: &str) -> Result<Box<dyn LlmProvider>> {
         match provider_name.to_lowercase().as_str() {
             "ollama" => {
-                let provider = OllamaProvider::new();
-                Ok(Box::new(provider))
+                Ok(Box::new(OllamaProvider::new()))
             }
             "openai" => {
-                let provider = OpenAiProvider::new()?;
-                Ok(Box::new(provider))
+                Ok(Box::new(OpenAiProvider::new()?))
+            }
+            "openrouter" => {
+                Ok(Box::new(OpenRouterProvider::new()?))
             }
             other => anyhow::bail!("Unsupported provider: {other}"),
         }

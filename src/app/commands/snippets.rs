@@ -13,6 +13,47 @@ use crate::{
     },
 };
 
+// ---- Provider ----
+pub async fn select_provider(
+    state: &mut AppState,
+) -> Result<String> {
+    let providers = crate::provider::ProviderFactory::available();
+
+    let default_index = providers
+        .iter()
+        .position(|provider| *provider == state.provider.id())
+        .unwrap_or(0);
+
+    let selection = Select::with_theme(
+        &*state.config.theme.dialoguer_theme
+    )
+        .with_prompt("Select LLM provider")
+        .items(providers)
+        .default(default_index)
+        .interact_opt()?;
+
+    let Some(index) = selection else {
+        return Ok("Provider selection cancelled.".to_string());
+    };
+
+    let selected = providers[index];
+
+    if selected == state.provider.id() {
+        return Ok(format!(
+            "Provider '{}' is already active.",
+            selected
+        ));
+    }
+
+    state.switch_provider(selected).await?;
+
+    Ok(format!(
+        "Switched provider to '{}'. Current model: {}",
+        state.provider.id(),
+        state.current_model.id,
+    ))
+}
+
 // ---- Sessions and history ----
 pub fn new_session(state: &mut AppState) -> Result<String> {
     state.start_new_session()?;
@@ -161,8 +202,38 @@ pub fn show_capabilities(state: &AppState) -> String {
     output
 }
 
-// ---- Model settings ----
-pub fn show_settings(model: &Model) -> String {
+// ---- Settings ----
+pub async fn settings_menu(
+    state: &mut AppState,
+) -> Result<String> {
+    let items = [
+        "Change provider",
+        "Show current model settings",
+        "Cancel",
+    ];
+
+    let selection = Select::with_theme(
+        &*state.config.theme.dialoguer_theme
+    )
+        .with_prompt(format!(
+            "Settings [{} / {}]",
+            state.provider.id(),
+            state.current_model.id,
+        ))
+        .items(&items)
+        .default(0)
+        .interact_opt()?;
+
+    match selection {
+        Some(0) => select_provider(state).await,
+
+        Some(1) => Ok(show_settings(&state.current_model)),
+
+        _ => Ok("Settings menu closed.".to_string()),
+    }
+}
+
+fn show_settings(model: &Model) -> String {
     let s = &model.settings;
     
     format!(
@@ -217,6 +288,7 @@ pub fn handle_set_command(
         (Some(k), Some(v)) => {
             apply_setting(&mut state.current_model, k, v)?;
             state.rebuild_agent()?;
+            state.persist_config()?;
             Ok(format!("Updated '{k}' -> '{v}' and rebuilt agent."))
         }
         // Incomplete input for `/set temperature
@@ -229,6 +301,7 @@ pub fn handle_set_command(
             let trimmed = input.trim();
             apply_setting(&mut state.current_model, k, trimmed)?;
             state.rebuild_agent()?;
+            state.persist_config()?;
             Ok(format!("Updated '{k}' -> '{trimmed}' and rebuilt agent."))
         }
        // Option 2: `/set` without arguments — interactive menu
@@ -465,14 +538,15 @@ pub fn help() -> String {
         out,
         "\
 Available commands:
-  /new                                Start a new chat session
+  /provider,     /p                   Select active LLM provider
+  /settings,     /cfg                 Open application settings
+  /new,          /n                   Start a new chat session
   /sessions,     /ss                  Switch or delete saved sessions
   /undo,         /u                   Remove last user message and model response
   /clear,        /cl                  Clear current session history
   /models,       /ms                  List available models
   /model,        /m                   Select active model interactively
   /capabilities, /cp                  Show current model capabilities
-  /settings,     /cfg                 Show current model settings
   /set,          /s                   Open interactive settings menu
   /set <key> <value|default>          Set a specific parameter (e.g., /set temperature 0.7)
   /stats,        /st                  Show API call statistics

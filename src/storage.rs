@@ -2,9 +2,9 @@ mod json;
 mod sqlite;
 
 use std::fs;
-use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result};
 use directories::ProjectDirs;
+use uuid::Uuid;
 
 use self::json::JsonStore;
 use self::sqlite::SqliteStore;
@@ -87,10 +87,6 @@ impl StorageManager {
     }
 
     pub fn generate_session_id() -> String {
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        format!("session_{ts}")
+        Uuid::now_v7().to_string()
     }
 }
