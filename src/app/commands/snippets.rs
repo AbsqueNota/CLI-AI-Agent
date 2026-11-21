@@ -538,19 +538,19 @@ pub fn help() -> String {
         out,
         "\
 Available commands:
-  /provider,     /p                   Select active LLM provider
-  /settings,     /cfg                 Open application settings
-  /new,          /n                   Start a new chat session
-  /sessions,     /ss                  Switch or delete saved sessions
-  /undo,         /u                   Remove last user message and model response
-  /clear,        /cl                  Clear current session history
-  /models,       /ms                  List available models
-  /model,        /m                   Select active model interactively
-  /capabilities, /cp                  Show current model capabilities
-  /set,          /s                   Open interactive settings menu
-  /set <key> <value|default>          Set a specific parameter (e.g., /set temperature 0.7)
-  /stats,        /st                  Show API call statistics
-  /help,         /h                   Show this help message
+  /capabilities, /cp                    Show current model capabilities
+  /clear,        /cl                    Clear current session history
+  /help,         /h                     Show this help message
+  /model,        /m                     Select active model interactively
+  /models,       /ms                    List available models
+  /new,          /n                     Start a new chat session
+  /provider,     /p                     Select active LLM provider
+  /sessions,     /ss                    Switch or delete saved sessions
+  /set,          /s                     Open interactive settings menu
+  /set <key> <value|default>            Set a specific parameter \"/set top_p 0.9\"
+  /settings,     /cfg                   Open application settings
+  /stats,        /st                    Show API call statistics
+  /undo,         /u                     Remove last user message and model response
 
 Settable parameters (/set):
   General : preamble, temperature, max_tokens, top_p, seed, stop,

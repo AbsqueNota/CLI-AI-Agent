@@ -24,50 +24,42 @@ pub struct AppState {
 
 impl AppState {
     pub async fn new(
-        provider: Box<dyn LlmProvider>, 
-        config: AppConfig,
-        storage: StorageManager
+        provider: Box<dyn LlmProvider>,
+        mut config: AppConfig,
+        storage: StorageManager,
     ) -> Result<Self> {
+        let provider_id = provider.id().to_lowercase();
+    
+        config.provider = provider_id.clone();
+    
         let mut registry = ModelRegistry::load(&provider)
             .await
-            .map_err(|e| anyhow::anyhow!(e))?;
-        
-        for model in registry.get_all_models_mut() {
-            println!("model_id: {},thinking: {}", 
-                model.id, 
-                model.settings.thinking
-                    .as_ref()
-                    .map_or("None".to_string(), ToString::to_string)
-            );
-            if let Some(profile) = config.get_model_profile(&model.provider, &model.id) {
-                model.sync_with_profile(profile);
-                println!("profile_id: {},thinking: {}\n", 
-                    profile.id,  
-                    model.settings.thinking
-                    .as_ref()
-                    .map_or("None".to_string(), ToString::to_string)
-                );
+            .map_err(anyhow::Error::msg)?;
+    
+        // Restore only profiles belonging to the active provider.
+        if let Some(provider_config) = config.providers.get(&provider_id) {
+            for model in registry.get_all_models_mut() {
+                if let Some(profile) = provider_config.models.get(&model.id) {
+                    model.sync_with_profile(profile);
+                }
             }
         }
-        
-        let selected = config.initial_model.as_ref()
-            .and_then(|id| {
-                registry
-                    .get_by_key(provider.id(), id) 
-            })
+    
+        // Restore the last selected model for this provider.
+        let selected = config
+            .providers
+            .get(&provider_id)
+            .and_then(|p| p.initial_model.as_deref())
+            .and_then(|id| registry.get_by_key(&provider_id, id))
             .or_else(|| registry.first())
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("No selectable models"))?;
-
+    
         let session = storage.load_latest_or_create_session()?;
         let stats_records = storage.load_session_stats(&session.id)?;
-        
-
-        let agent = AgentFactory::build(
-            &provider,
-            &selected
-        )?;
-        
+    
+        let agent = AgentFactory::build(&provider, &selected)?;
+    
         Ok(Self {
             config,
             provider,
@@ -96,6 +88,27 @@ impl AppState {
         Ok(())
     }
 
+    fn update_provider_config(
+        config: &mut AppConfig,
+        model: &Model,
+    ) {
+        let provider_id = model.provider.to_lowercase();
+    
+        config.provider = provider_id.clone();
+    
+        let provider_config = config
+            .providers
+            .entry(provider_id)
+            .or_default();
+    
+        provider_config.initial_model = Some(model.id.clone());
+    
+        provider_config.models.insert(
+            model.id.clone(),
+            SavedModelProfile::from(model),
+        );
+    }
+
     pub async fn switch_provider(
         &mut self,
         provider_name: &str,
@@ -106,66 +119,53 @@ impl AppState {
             return Ok(());
         }
     
-        // Save current provider/model configuration before switching.
+        // Save the current provider's model and profile.
         self.persist_config()?;
     
-        // Initialize the new provider.
         let new_provider = ProviderFactory::create(&provider_name)?;
     
-        // Load models from the new provider.
         let mut new_registry = ModelRegistry::load(&new_provider)
             .await
             .map_err(anyhow::Error::msg)?;
     
-        // Restore saved profiles for this provider.
-        for model in new_registry.get_all_models_mut() {
-            if let Some(profile) = self.config.get_model_profile(
-                &model.provider,
-                &model.id,
-            ) {
-                model.sync_with_profile(profile);
+        // Restore profiles belonging to the new provider.
+        if let Some(provider_config) = self.config.providers.get(&provider_name) {
+            for model in new_registry.get_all_models_mut() {
+                if let Some(profile) = provider_config.models.get(&model.id) {
+                    model.sync_with_profile(profile);
+                }
             }
         }
     
-        // Try to restore the previously selected model ID.
-        // If it does not exist for this provider, use the first available model.
-        let selected_model = self.config.initial_model
-            .as_deref()
-            .and_then(|model_id| {
-                new_registry.get_by_key(
-                    new_provider.id(),
-                    model_id,
-                )
-            })
+        // Restore this provider's previously selected model.
+        let selected_model = self.config
+            .providers
+            .get(&provider_name)
+            .and_then(|p| p.initial_model.as_deref())
+            .and_then(|id| new_registry.get_by_key(
+                new_provider.id(),
+                id,
+            ))
             .or_else(|| new_registry.first())
             .cloned()
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "No models available for provider '{}'",
-                    provider_name
-                )
-            })?;
+            .ok_or_else(|| anyhow::anyhow!(
+                "No models available for provider '{}'",
+                provider_name
+            ))?;
     
-        // Build the new agent before changing the active state.
         let new_agent = AgentFactory::build(
             &new_provider,
             &selected_model,
         )?;
     
-        // Prepare and persist the new configuration.
+        // Prepare the new configuration.
         let mut new_config = self.config.clone();
     
-        let profile = SavedModelProfile::from(&selected_model);
-    
-        new_config.upsert_model_profile(
-            new_provider.id(),
-            &selected_model.id,
-            profile,
+        Self::update_provider_config(
+            &mut new_config,
+            &selected_model,
         );
-    
         self.storage.save_config(&new_config)?;
-    
-        // Apply the new state only after initialization succeeds.
         self.provider = new_provider;
         self.registry = new_registry;
         self.current_model = selected_model;
@@ -177,22 +177,43 @@ impl AppState {
 
     pub async fn switch_model(&mut self, model_id: &str) -> Result<()> {
         let key = format!("{}/{}", self.provider.id(), model_id);
-
-        let Some(mut next_model) = self.registry.get(&key).cloned() else {
-            anyhow::bail!("Model '{}' not found in registry", key);
-        };
-
-        if let Some(profile) = self.config.get_model_profile(self.provider.id(), model_id) {
+    
+        let mut next_model = self.registry
+            .get(&key)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!(
+                "Model '{}' not found in registry",
+                key
+            ))?;
+    
+        // Restore the model's saved settings.
+        if let Some(profile) = self.config
+            .providers
+            .get(self.provider.id())
+            .and_then(|p| p.models.get(model_id))
+        {
             next_model.apply_profile(profile);
         }
-
+    
         let new_agent = AgentFactory::build(
             &self.provider,
             &next_model,
         )?;
-
+    
+        // Save selection and profile before applying state.
+        let mut new_config = self.config.clone();
+    
+        Self::update_provider_config(
+            &mut new_config,
+            &next_model,
+        );
+    
+        self.storage.save_config(&new_config)?;
+        self.registry.insert(next_model.clone());
         self.current_model = next_model;
         self.agent = new_agent;
+        self.config = new_config;
+    
         Ok(())
     }
 
@@ -202,7 +223,7 @@ impl AppState {
         self.stats = CallsStats::new(records);
         Ok(())
     }
-
+    
     pub fn clear_history(&mut self) {
         self.session.history.clear();
     }
@@ -213,12 +234,19 @@ impl AppState {
 
     /// Saves the settings of the current model and provider to config.json
     pub fn persist_config(&mut self) -> Result<()> {
-        let profile = SavedModelProfile::from(&self.current_model);
-        self.config.upsert_model_profile(
-            &self.current_model.provider,
-            &self.current_model.id,
-            profile,
+        // Synchronize current model with registry.
+        let key = self.current_model.full_name();
+    
+        if let Some(model) = self.registry.get_mut(&key) {
+            model.preamble = self.current_model.preamble.clone();
+            model.settings = self.current_model.settings.clone();
+        }
+    
+        Self::update_provider_config(
+            &mut self.config,
+            &self.current_model,
         );
+    
         self.storage.save_config(&self.config)
     }
 
@@ -234,7 +262,6 @@ impl AppState {
         self.storage.save_session(&self.session)
     }
 
-    /// Records call statistics to memory and SQLite
     pub fn record_call(&mut self, mut record: CallRecord) -> Result<()> {
         record.session_id = self.session.id.clone();
         self.storage.insert_call_stat(&record)?;
@@ -242,19 +269,16 @@ impl AppState {
         Ok(())
     }
 
-    /// Removes the last move and updates the database
     pub fn undo_last_turn(&mut self) -> Result<()> {
         self.session.undo_last_turn();
         self.storage.save_session(&self.session)
     }
 
-    /// Clears the current session history (/clear)
     pub fn clear_current_session(&mut self) -> Result<()> {
         self.session.history.clear();
         self.storage.clear_session_messages(&self.session.id)
     }
 
-    /// Creates a new session (/new)
     pub fn start_new_session(&mut self) -> Result<()> {
         let new_id = format!(
             "session_{}",
@@ -268,7 +292,6 @@ impl AppState {
         self.storage.save_session(&self.session)
     }
 
-    /// Deletes a session by ID; if the current session is deleted, it switches to the next one or creates a new one.
     pub fn delete_session_by_id(&mut self, id: &str) -> Result<bool> {
         let deleted = self.storage.delete_session(id)?;
         if deleted && self.session.id == id {

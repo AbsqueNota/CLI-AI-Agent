@@ -9,7 +9,6 @@ use agent_rust::{
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    println!("TEST_123: {:?}", std::env::var("TEST_123"));
     let app_name = env!("CARGO_PKG_NAME");
 
     let storage = StorageManager::new(app_name)?;

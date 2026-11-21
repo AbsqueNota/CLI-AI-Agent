@@ -24,7 +24,6 @@ pub struct OpenRouterProvider {
 impl OpenRouterProvider {
     pub fn new() -> Result<Self> {
         let mut extra_headers = Vec::new();
-        println!("api_key: {:?}", std::env::var("OPENROUTER_API_KEY"));
         let api_key = std::env::var("OPENROUTER_API_KEY")
             .context("OPENROUTER_API_KEY environment variable is not set")?;
         if let Ok(referer) = std::env::var("OPENROUTER_HTTP_REFERER") {

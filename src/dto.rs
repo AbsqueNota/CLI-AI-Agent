@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
+use std::collections::HashMap;
 use rig::message::Message;
-use serde_json::Value;
 use crate::models::{settings::ModelSettings,Model};
 
 // ---- Calls ----
