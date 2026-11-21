@@ -150,6 +150,23 @@ impl LlmProvider for OllamaProvider {
         Ok(result)
     }
      
+    async fn stop_model(&self, model_id: &str) -> Result<()> {
+        let url = format!("{}/api/generate", self.base_url);
+    
+        self.http
+            .post(url)
+            .json(&json!({
+                "model": model_id,
+                "keep_alive": 0,
+                "stream": false
+            }))
+            .send()
+            .await?
+            .error_for_status()?;
+    
+        Ok(())
+    } 
+
     fn native_completion(&self, model_id: &str) -> Result<DynModel<Completion>> {
         Ok(self.client.native_completion(model_id).into())
     }

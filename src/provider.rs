@@ -1,7 +1,7 @@
 pub mod ollama;
 pub mod openai;
 pub mod openrouter;
-pub mod open_compatible;
+pub mod compatible;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -26,6 +26,7 @@ use crate::{
 pub trait LlmProvider: Send + Sync {
     fn id(&self) -> &'static str;
     async fn list_models(&self) -> Result<Vec<Model>>;
+    async fn stop_model(&self, model_id: &str) -> Result<()>;
     fn to_additional_params(&self, model: &Model ) -> Option<Value>;
     fn native_completion( &self, model_id: &str, ) -> Result<DynModel<Completion>>;
     fn parse_call_metrics(&self, model_id: &str, raw: &Value) -> CallRecord;

@@ -21,12 +21,17 @@ pub struct Model {
     pub name:         String,
     pub preamble:     String,
     pub size_bytes:   Option<u64>,
+    pub is_cloud:     bool,
     pub capabilities: ModelCapabilities,
     pub settings:     ModelSettings,
     pub details:      ModelDetails,
 }
 
 impl Model {
+    pub fn is_local(&self) -> bool {
+        !self.is_cloud
+    }
+
     pub fn full_name(&self) -> String {
         format!("{}/{}", self.provider, self.id)
     }
@@ -76,13 +81,35 @@ impl<'a> TryFrom<(ShowModel, &'a TagModel, &'a str)> for Model {
                 _ => {}
             }
         }
-        
+        let model_name = tag_model.name.to_lowercase();
+
+        let has_remote_metadata =
+            tag_model.remote_model.is_some()
+            || tag_model.remote_host.is_some()
+            || show_model.remote_model.is_some()
+            || show_model.remote_host.is_some();
+
+        let has_cloud_suffix =
+            model_name.ends_with(":cloud")
+            || model_name.ends_with("-cloud");
+
+        const CLOUD_MANIFEST_MAX_SIZE: u64 = 10 * 1024;
+
+        let has_cloud_manifest_size =
+            tag_model.size < CLOUD_MANIFEST_MAX_SIZE;
+
+        let is_cloud =
+            has_remote_metadata
+            || has_cloud_suffix
+            || has_cloud_manifest_size;
+
         Ok(Model{
             id:           tag_model.name.clone(),
             name:         String::from("local-agent"),
             preamble:     String::from("You are a helpful local assistant."),
             provider:     provider_id.to_string(),
             size_bytes:   Some(tag_model.size),
+            is_cloud,
             details:      show_model.details.clone(),
             settings,
             capabilities,

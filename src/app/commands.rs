@@ -14,6 +14,7 @@ use super::commands::snippets::{
     select_model,
     show_capabilities,
     handle_set_command,
+    stop_current_model,
     help,
 };
 
@@ -30,10 +31,10 @@ pub async fn execute_command(
         let msg = match cmd {
             // ---- Settings ----
             "/settings"     | "/cfg"    => settings_menu(state).await?,
-            "/set"          | "/s"      => handle_set_command(state, arg1, arg2)?,
+            "/set"                      => handle_set_command(state, arg1, arg2)?,
 
             // ---- Provider ----
-            "/provider"     | "/p"      => select_provider(state).await?,
+            "/provider"     | "/pr"     => select_provider(state).await?,
             
             // ---- Sessions and history ----
             "/new"          | "/n"      => new_session(state)?,
@@ -42,12 +43,13 @@ pub async fn execute_command(
             "/clear"        | "/cl"     => clear_history(state)?,
 
             // ---- Models ----
-            "/models"       | "/ms"     => show_models(state),
-            "/model"        | "/m"      => select_model(state).await?,
+            "/models"       | "/mls"    => show_models(state),
+            "/model"        | "/ml"     => select_model(state).await?,
             "/capabilities" | "/cp"     => show_capabilities(state),            
+            "/stop"         | "/st"     => stop_current_model(state).await?,
 
             // ---- Statistics and reference information ----
-            "/stats"        | "/st"     => prepare_report(state.stats.format_calls()),
+            "/stats"        | "/sts"    => prepare_report(state.stats.format_calls()),
             "/help"         | "/h"      => help(),
             
             _ => "Unknown command. Use /help.".to_string(),

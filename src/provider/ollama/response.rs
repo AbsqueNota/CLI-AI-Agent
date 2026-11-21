@@ -20,6 +20,12 @@ pub struct ShowModel {
     #[serde(default)]
     pub capabilities: Vec<String>,
     pub thinking: Option<ThinkingMetadata>,
+
+    // Ollama Cloud metadata
+    #[serde(default)]
+    pub remote_model: Option<String>,
+    #[serde(default)]
+    pub remote_host: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -30,6 +36,12 @@ pub struct TagModel {
     pub size: u64,
     pub digest: String,
     pub details: ModelDetails,
+
+    // Ollama Cloud metadata
+    #[serde(default)]
+    pub remote_model: Option<String>,
+    #[serde(default)]
+    pub remote_host: Option<String>,
 }
 
 #[derive(Deserialize)]

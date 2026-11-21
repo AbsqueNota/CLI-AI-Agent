@@ -1,5 +1,3 @@
-
-
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use rig::{
@@ -11,14 +9,14 @@ use crate::dto::CallRecord;
 use crate::models::Model;
 use crate::provider::{
     LlmProvider,
-    open_compatible::{
-        OpenAiCompatibleConfig,
+    compatible::{
+        CloudProviderCompatible,
         ReasoningParameter,
     },
 };
 
 pub struct OpenRouterProvider {
-    common: OpenAiCompatibleConfig,
+    common: CloudProviderCompatible,
 }
 
 impl OpenRouterProvider {
@@ -34,7 +32,7 @@ impl OpenRouterProvider {
             extra_headers.push(("X-Title".to_string(), title));
         }
 
-        let common = OpenAiCompatibleConfig::from_env(
+        let common = CloudProviderCompatible::new(
             "openrouter",
             &api_key,
             "https://openrouter.ai/api/v1",
@@ -54,6 +52,10 @@ impl LlmProvider for OpenRouterProvider {
 
     async fn list_models(&self) -> Result<Vec<Model>> {
         self.common.list_models().await
+    }
+
+    async fn stop_model(&self, model_id: &str) -> Result<()> {
+        self.common.stop_model(model_id).await
     }
 
     fn to_additional_params(&self, model: &Model) -> Option<serde_json::Value> {

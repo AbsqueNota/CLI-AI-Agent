@@ -1,18 +1,22 @@
+pub mod labels;
+
 use dialoguer::{
     console::{style, Color as ConsoleColor, Style},
     theme::ColorfulTheme,
 };
 use colored::Color as ColoredColor;
 use std::{fmt, sync::Arc};
+use super::theme::labels::MenuLabels;
 
 #[derive(Clone)]
 pub struct AppTheme {
-    pub accent_pink: ColoredColor,
-    pub accent_mint: ColoredColor,
-    pub text_light:  ColoredColor,
-    pub text_muted:  ColoredColor,
-    pub dark_gray:   ColoredColor,
+    pub accent_pink:     ColoredColor,
+    pub accent_mint:     ColoredColor,
+    pub text_light:      ColoredColor,
+    pub text_muted:      ColoredColor,
+    pub dark_gray:       ColoredColor,
     pub dialoguer_theme: Arc<ColorfulTheme>,
+    pub menu_labels:     MenuLabels,
 }
 
 fn to_console_color(color: ColoredColor) -> ConsoleColor {
@@ -23,12 +27,14 @@ fn to_console_color(color: ColoredColor) -> ConsoleColor {
 }
 impl Default for AppTheme {
     fn default() -> Self {  
+        let menu_labels = MenuLabels::default();
         let mut dialoguer_theme=  ColorfulTheme::default();
         let accent_pink = ColoredColor::TrueColor { r: 250, g:   6, b: 115 };  // #FA0673
         let accent_mint = ColoredColor::TrueColor { r:   0, g: 245, b: 212 };  // #00F5D4
         let text_light  = ColoredColor::TrueColor { r: 226, g: 212, b: 240 };  // #e2d4f0 
         let text_muted  = ColoredColor::TrueColor { r: 158, g: 138, b: 152 };  // #9E8A98
         let dark_gray   = ColoredColor::TrueColor { r: 128, g: 128, b: 128 };  // #808080
+
         dialoguer_theme.prompt_prefix = style("✦".to_string())
             .for_stderr()
             .fg(to_console_color(text_light))
@@ -53,6 +59,7 @@ impl Default for AppTheme {
             .for_stderr()
             .fg(to_console_color(accent_mint))
             .bold();
+
         Self {
             dialoguer_theme:Arc::new(dialoguer_theme),
             accent_pink,
@@ -60,6 +67,7 @@ impl Default for AppTheme {
             text_light,
             text_muted,
             dark_gray,
+            menu_labels,
         }
     }
 }

@@ -12,14 +12,14 @@ use crate::{
 };
 
 pub struct AppState {
-    pub storage: StorageManager,
-    pub config: AppConfig,
-    pub provider: Box<dyn LlmProvider>,
-    pub registry: ModelRegistry,
+    pub storage:       StorageManager,
+    pub config:        AppConfig,
+    pub provider:      Box<dyn LlmProvider>,
+    pub registry:      ModelRegistry,
     pub current_model: Model,
-    pub agent: Agent,
-    pub session: ChatSession,
-    pub stats: CallsStats,
+    pub agent:         Agent,
+    pub session:       ChatSession,
+    pub stats:         CallsStats,
 }
 
 impl AppState {
@@ -71,44 +71,26 @@ impl AppState {
             stats: CallsStats { calls: stats_records },
         })
     }
-
-    pub fn rebuild_agent(&mut self) -> Result<()> {
+    
+    // ---- Save current state ----
+    pub fn persist_config(&mut self) -> Result<()> {
+        // Synchronize current model with registry.
         let key = self.current_model.full_name();
-        // Synchronize the current model's setting changes back to the registry
-        if let Some(reg_model) = self.registry.get_mut(&key) {
-            reg_model.preamble = self.current_model.preamble.clone();
-            reg_model.settings = self.current_model.settings.clone();
+    
+        if let Some(model) = self.registry.get_mut(&key) {
+            model.preamble = self.current_model.preamble.clone();
+            model.settings = self.current_model.settings.clone();
         }
-
-        let agent = AgentFactory::build(
-            &self.provider,
+    
+        Self::update_provider_config(
+            &mut self.config,
             &self.current_model,
-        )?;
-        self.agent = agent;
-        Ok(())
-    }
-
-    fn update_provider_config(
-        config: &mut AppConfig,
-        model: &Model,
-    ) {
-        let provider_id = model.provider.to_lowercase();
-    
-        config.provider = provider_id.clone();
-    
-        let provider_config = config
-            .providers
-            .entry(provider_id)
-            .or_default();
-    
-        provider_config.initial_model = Some(model.id.clone());
-    
-        provider_config.models.insert(
-            model.id.clone(),
-            SavedModelProfile::from(model),
         );
+    
+        self.storage.save_config(&self.config)
     }
-
+    
+    // ---- Provider ----
     pub async fn switch_provider(
         &mut self,
         provider_name: &str,
@@ -174,7 +156,46 @@ impl AppState {
     
         Ok(())
     }
+    
+    fn update_provider_config(
+        config: &mut AppConfig,
+        model: &Model,
+    ) {
+        let provider_id = model.provider.to_lowercase();
+    
+        config.provider = provider_id.clone();
+    
+        let provider_config = config
+            .providers
+            .entry(provider_id)
+            .or_default();
+    
+        provider_config.initial_model = Some(model.id.clone());
+    
+        provider_config.models.insert(
+            model.id.clone(),
+            SavedModelProfile::from(model),
+        );
+    }
+    
+    // ---- Agent
+    pub fn rebuild_agent(&mut self) -> Result<()> {
+        let key = self.current_model.full_name();
+        // Synchronize the current model's setting changes back to the registry
+        if let Some(reg_model) = self.registry.get_mut(&key) {
+            reg_model.preamble = self.current_model.preamble.clone();
+            reg_model.settings = self.current_model.settings.clone();
+        }
 
+        let agent = AgentFactory::build(
+            &self.provider,
+            &self.current_model,
+        )?;
+        self.agent = agent;
+        Ok(())
+    }    
+    
+    // ---- Model ---- 
     pub async fn switch_model(&mut self, model_id: &str) -> Result<()> {
         let key = format!("{}/{}", self.provider.id(), model_id);
     
@@ -216,7 +237,25 @@ impl AppState {
     
         Ok(())
     }
-
+    
+    pub fn current_model_name(&self) -> &str {
+        &self.current_model.id
+    }
+    
+    pub async fn stop_current_model(&self) -> Result<()> {
+        if !self.current_model.is_local() {
+            anyhow::bail!(
+                "Model '{}' is cloud-based and cannot be unloaded locally.",
+                self.current_model.id
+            );
+        }
+    
+        self.provider
+            .stop_model(&self.current_model.id)
+            .await
+    }
+    
+    // ---- Session ----
     pub fn switch_session(&mut self, session_id: &str, title: String) -> Result<()> {
         self.session = self.storage.load_session(session_id, title)?;
         let records = self.storage.load_session_stats(session_id)?;
@@ -228,29 +267,6 @@ impl AppState {
         self.session.history.clear();
     }
 
-    pub fn current_model_name(&self) -> &str {
-        &self.current_model.id
-    }
-
-    /// Saves the settings of the current model and provider to config.json
-    pub fn persist_config(&mut self) -> Result<()> {
-        // Synchronize current model with registry.
-        let key = self.current_model.full_name();
-    
-        if let Some(model) = self.registry.get_mut(&key) {
-            model.preamble = self.current_model.preamble.clone();
-            model.settings = self.current_model.settings.clone();
-        }
-    
-        Self::update_provider_config(
-            &mut self.config,
-            &self.current_model,
-        );
-    
-        self.storage.save_config(&self.config)
-    }
-
-    /// Saves the current session to SQLite
     pub fn persist_session(&mut self) -> Result<()> {
         // If this is the first message in a new session, we generate a title from it.
         if self.session.title == "Default Session" {

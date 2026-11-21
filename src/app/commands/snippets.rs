@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use std::fmt::{Write,Display};
+use std::fmt::{Display, Write};
 use dialoguer::{theme::ColorfulTheme, Input, Select};
 use crate::{
     app::state::AppState, 
@@ -18,17 +18,37 @@ pub async fn select_provider(
     state: &mut AppState,
 ) -> Result<String> {
     let providers = crate::provider::ProviderFactory::available();
+    let active_provider = state.provider.id();
+
+    //labels ui stuff
+    let labels = &state.config.theme.menu_labels;
+    let active_label = labels.active.clone();
+    let cancel_label = labels.cancel.clone();
+
+    let mut items: Vec<String> = providers
+        .iter()
+        .map(|provider| {
+            if *provider == active_provider {
+                format!("{provider} {active_label}")
+            } else {
+                provider.to_string()
+            }
+        })
+        .collect();
+
+    let cancel_index = items.len();
+    items.push(cancel_label);
 
     let default_index = providers
         .iter()
-        .position(|provider| *provider == state.provider.id())
+        .position(|provider| *provider == active_provider)
         .unwrap_or(0);
 
     let selection = Select::with_theme(
         &*state.config.theme.dialoguer_theme
     )
         .with_prompt("Select LLM provider")
-        .items(providers)
+        .items(&items)
         .default(default_index)
         .interact_opt()?;
 
@@ -36,9 +56,13 @@ pub async fn select_provider(
         return Ok("Provider selection cancelled.".to_string());
     };
 
+    if index == cancel_index {
+        return Ok("Provider selection cancelled.".to_string());
+    }
+
     let selected = providers[index];
 
-    if selected == state.provider.id() {
+    if selected == active_provider {
         return Ok(format!(
             "Provider '{}' is already active.",
             selected
@@ -80,11 +104,17 @@ pub fn manage_sessions(state: &mut AppState) -> Result<String> {
     }
 
     let theme = &*state.config.theme.dialoguer_theme;
+    let labels = &state.config.theme.menu_labels;
+    let active_label = labels.active.clone();
 
     let items: Vec<String> = sessions
         .iter()
         .map(|s| {
-            let active = if s.id == state.session.id { " [ACTIVE]" } else { "" };
+            let active = if s.id == state.session.id { 
+                format!(" {active_label}") 
+            } else { 
+                String::new() 
+            };
             format!("{} ({} msgs, {}){}", s.title, s.message_count, s.updated_at, active)
         })
         .collect();
@@ -131,18 +161,27 @@ pub fn manage_sessions(state: &mut AppState) -> Result<String> {
     }
 }
 
-// --- Models ----
+// ---- Models ----
 pub fn show_models(state: &AppState) -> String{
+    let labels = &state.config.theme.menu_labels;
+    let active_label = labels.active.clone();
+
     let mut result = String::from("\nAvailable models:\n");
     for model in state.registry.by_provider(state.provider.id()) {
-        let active = if model.id == state.current_model.id 
-            {" [active]" } else { "" };
-        result.push_str(&format!("\n- {}{}", model.id, active));
+        let active = if model.id == state.current_model.id {
+            format!(" {active_label}") } else { String::new() };
+        result.push_str(
+            &format!( "\n- {}{} {}",
+            model.id.to_string(),
+            labels.get_cloud_label(model.is_cloud),
+            active
+        ));
     }
-    return result;
+    result
 }
 
 pub async fn select_model(state: &mut AppState) -> Result<String> {
+    let labels = &state.config.theme.menu_labels;
     let models = state.registry
         .by_provider(state.provider.id());
 
@@ -152,7 +191,13 @@ pub async fn select_model(state: &mut AppState) -> Result<String> {
 
     let names: Vec<String> = models
         .iter()
-        .map(|model| model.id.clone())
+        .map(|model| {
+            format!(
+                "{}{}",
+                model.id,
+                labels.get_cloud_label(model.is_cloud),
+            )
+        })
         .collect();
 
     let default = names
@@ -200,6 +245,17 @@ pub fn show_capabilities(state: &AppState) -> String {
     let _ = write!  (output, "Decision:   {}", caps.supports(CapabilityKey::Decision));
 
     output
+}
+
+pub async fn stop_current_model(state: &AppState) -> Result<String> {
+    let model_id = state.current_model.id.clone();
+
+    state.stop_current_model().await?;
+
+    Ok(format!(
+        "Model '{}' unloaded from memory.",
+        model_id
+    ))
 }
 
 // ---- Settings ----
@@ -320,19 +376,27 @@ fn interactive_settings_menu(state: &mut AppState) -> Result<String> {
     loop {
         let model = &state.current_model;
         let settings = &model.settings;
+        
+        let labels = &state.config.theme.menu_labels;
+        let visible_label = labels.visible.clone();
+        let hidden_label  = labels.hidden.clone();
+        let default_label = labels.default.clone();
+        let apply_label   = labels.apply.clone();
+        let cancel_label  = labels.cancel.clone();
 
         let thinking_str = fmt_opt(settings.thinking.as_ref());
-        let visible_str = settings.thinking.as_ref().map_or("default", |v| {
-            if v.is_visible {
-                "true (visible)"
-            } else {
-                "false (hidden)"
-            }
+        let visible_str = settings.thinking.as_ref()
+            .map_or(default_label.clone(), |v| {
+                if v.is_visible {
+                    format!("true {visible_label}")
+                } else {
+                    format!("false {hidden_label}")
+                }
         });
         let stop_str = settings
             .stop
             .as_ref()
-            .map_or_else(|| "default".to_string(), |v| v.join(", "));
+            .map_or_else(|| default_label.clone(), |v| v.join(", "));
 
         let mut items = vec![
             format!("preamble         : {}", if model.preamble.is_empty() { "<empty>" } else { &model.preamble }),
@@ -359,9 +423,9 @@ fn interactive_settings_menu(state: &mut AppState) -> Result<String> {
         }
 
         let save_idx = items.len();
-        items.push("[Apply]".to_string());
+        items.push(apply_label);
         let cancel_idx = items.len();
-        items.push("[Cancel]".to_string());
+        items.push(cancel_label.clone());
 
         let selection = Select::with_theme(&*state.config.theme.dialoguer_theme)
             .with_prompt("Select parameter to edit")
@@ -389,7 +453,7 @@ fn interactive_settings_menu(state: &mut AppState) -> Result<String> {
                 let key = items[idx].split(':').next().unwrap_or("").trim();
                 match key {
                     "thinking" => {
-                        let options = ["on", "off", "low", "medium", "high", "default", "<Cancel>"];
+                        let options = ["on", "off", "low", "medium", "high", "default", cancel_label.as_str()];
                         let opt_idx = Select::with_theme(&*state.config.theme.dialoguer_theme)
                             .with_prompt("Select thinking mode")
                             .items(&options)
@@ -398,13 +462,13 @@ fn interactive_settings_menu(state: &mut AppState) -> Result<String> {
                             .map_err(|e| anyhow!(e))?;
 
                         let chosen = options[opt_idx];
-                        if chosen != "<Cancel>" {
+                        if chosen != cancel_label {
                             apply_setting(&mut state.current_model, "thinking", chosen)?;
                             changed = true;
                         }
                     }
                     "thinking_visible" => {
-                        let options = ["true", "false", "<Cancel>"];
+                        let options = ["true", "false", cancel_label.as_str()];
                         let opt_idx = Select::with_theme(&*state.config.theme.dialoguer_theme)
                             .with_prompt("Show thinking output in chat?")
                             .items(&options)
@@ -413,7 +477,7 @@ fn interactive_settings_menu(state: &mut AppState) -> Result<String> {
                             .map_err(|e| anyhow!(e))?;
 
                         let chosen = options[opt_idx];
-                        if chosen != "<Cancel>" {
+                        if chosen != cancel_label.as_str() {
                             apply_setting(&mut state.current_model, "thinking_visible", chosen)?;
                             changed = true;
                         }
@@ -540,23 +604,24 @@ pub fn help() -> String {
 Available commands:
   /capabilities, /cp                    Show current model capabilities
   /clear,        /cl                    Clear current session history
+  /exit,         /q                     Exit the application
   /help,         /h                     Show this help message
-  /model,        /m                     Select active model interactively
-  /models,       /ms                    List available models
+  /model,        /ml                    Select active model interactively
+  /models,       /mls                   List available models
   /new,          /n                     Start a new chat session
-  /provider,     /p                     Select active LLM provider
+  /provider,     /pr                    Select active LLM provider
   /sessions,     /ss                    Switch or delete saved sessions
-  /set,          /s                     Open interactive settings menu
+  /set                                  Open interactive settings menu
   /set <key> <value|default>            Set a specific parameter \"/set top_p 0.9\"
   /settings,     /cfg                   Open application settings
-  /stats,        /st                    Show API call statistics
+  /stats,        /sts                   Show API call statistics
+  /stop,         /st                    Unload current local model from memory
   /undo,         /u                     Remove last user message and model response
 
 Settable parameters (/set):
   General : preamble, temperature, max_tokens, top_p, seed, stop,
             thinking (on|off|low|medium|high), thinking_visible (true|false)
   Ollama  : keep_alive, num_ctx, num_predict, top_k, min_p,
-            repeat_penalty, repeat_last_n, mirostat, mirostat_tau, mirostat_eta"
-    );
+            repeat_penalty, repeat_last_n, mirostat, mirostat_tau, mirostat_eta");
     out
 }

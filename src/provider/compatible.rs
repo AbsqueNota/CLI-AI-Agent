@@ -17,7 +17,7 @@ pub enum ReasoningParameter {
     OpenAiCompatible,
 }
 
-pub struct OpenAiCompatibleConfig {
+pub struct CloudProviderCompatible {
     provider_id: &'static str,
     api_key: String,
     base_url: String,
@@ -48,8 +48,8 @@ struct ModelArchitecture {
     input_modalities: Vec<String>,
 }
 
-impl OpenAiCompatibleConfig {
-    pub fn from_env(
+impl CloudProviderCompatible {
+    pub fn new(
         provider_id:         &'static str,
         api_key:             &str,
         base_url:            &str,
@@ -109,6 +109,13 @@ impl OpenAiCompatibleConfig {
         Ok(models)
     }
 
+    pub async fn stop_model(&self, model_id: &str) -> Result<()> {
+        anyhow::bail!(
+            "Stop: [{model_id}] Provider '{}' does not support stopping models.",
+            self.id()
+        )
+    }
+
     fn is_completion_model(entry: &ModelEntry) -> bool {
         let id = entry.id.to_lowercase();
 
@@ -131,6 +138,7 @@ impl OpenAiCompatibleConfig {
             name: entry.id,
             preamble: "You are a helpful assistant.".to_string(),
             size_bytes: None,
+            is_cloud: true,
             capabilities,
             settings: ModelSettings::default(),
             details: ModelDetails::default(),

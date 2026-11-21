@@ -10,14 +10,14 @@ use crate::dto::CallRecord;
 use crate::models::Model;
 use crate::provider::{
     LlmProvider,
-    open_compatible::{
-        OpenAiCompatibleConfig,
+    compatible::{
+        CloudProviderCompatible,
         ReasoningParameter,
     },
 };
 
 pub struct OpenAiProvider {
-    common: OpenAiCompatibleConfig,
+    common: CloudProviderCompatible,
     client: OpenAI,
 }
 
@@ -26,7 +26,7 @@ impl OpenAiProvider {
         let api_key = std::env::var("OPENAI_API_KEY")
             .context("OPENAI_API_KEY environment variable is not set")?;
 
-        let common = OpenAiCompatibleConfig::from_env(
+        let common = CloudProviderCompatible::new(
             "openai",
             &api_key,
             "https://api.openai.com/v1",
@@ -49,6 +49,10 @@ impl LlmProvider for OpenAiProvider {
 
     async fn list_models(&self) -> Result<Vec<Model>> {
         self.common.list_models().await
+    }
+
+    async fn stop_model(&self, model_id: &str) -> Result<()> {
+        self.common.stop_model(model_id).await
     }
 
     fn to_additional_params(&self, model: &Model) -> Option<serde_json::Value> {
