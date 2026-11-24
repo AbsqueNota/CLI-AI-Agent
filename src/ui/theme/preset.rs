@@ -177,14 +177,6 @@ impl Palette {
     }
 }
 
-pub fn error_color() -> ColoredColor {
-    rgb(255, 75, 92)
-}
-
-pub fn warning_color() -> ColoredColor {
-    rgb(255, 196, 87)
-}
-
 fn rgb(r: u8, g: u8, b: u8) -> ColoredColor {
     ColoredColor::TrueColor { r, g, b }
 }

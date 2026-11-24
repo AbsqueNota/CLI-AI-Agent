@@ -22,6 +22,11 @@ use crate::{
     }
 };
 
+pub enum InitialProviderSelection {
+    Selected(Box<dyn LlmProvider>),
+    Exit,
+}
+
 #[async_trait]
 pub trait LlmProvider: Send + Sync {
     fn id(&self) -> &'static str;

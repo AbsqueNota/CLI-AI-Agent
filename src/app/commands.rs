@@ -2,6 +2,7 @@ pub mod snippets;
 
 use anyhow::Result;
 use crate::app::AppContext;
+use crate::ui::TerminalUi;
 use super::commands::snippets::{
     settings_menu,
     select_provider,
@@ -64,7 +65,7 @@ pub async fn execute_command(
             Ok(true)
         }
         Err(error) => {
-            ui.error(&format!("[execute_command]: {error:#}"));
+            TerminalUi::error(&format!("[execute_command]: {error:#}"));
             Ok(false)
         }
     }

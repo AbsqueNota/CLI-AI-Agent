@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
-use std::collections::HashMap;
 use rig::message::Message;
 use crate::models::{settings::ModelSettings,Model};
 

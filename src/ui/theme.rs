@@ -5,10 +5,8 @@ use dialoguer::{
     theme::ColorfulTheme,
 };
 use std::{fmt, sync::Arc};
-
+use colored::Color;
 use crate::ui::theme::preset::{
-    error_color,
-    warning_color,
     Palette,
     ThemePreset,
 };
@@ -34,12 +32,12 @@ impl AppTheme {
         }
     }
 
-    pub fn error_color(&self) -> colored::Color {
-        error_color()
+    pub fn error_color() -> colored::Color {
+        Color::TrueColor { r: 255, g: 75, b: 92 }
     }
 
-    pub fn warning_color(&self) -> colored::Color {
-        warning_color()
+    pub fn warning_color() -> colored::Color {
+        Color::TrueColor { r: 255, g: 196, b: 87 }
     }
 }
 

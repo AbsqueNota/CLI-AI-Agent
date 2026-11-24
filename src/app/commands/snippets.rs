@@ -1,6 +1,8 @@
 use anyhow::{anyhow, Result};
 use std::fmt::{Display, Write};
 use crate::{
+    provider::ProviderFactory,
+    provider::InitialProviderSelection,
     ui::{
         TerminalUi,
         theme::{
@@ -20,63 +22,127 @@ use crate::{
 };
 
 // ---- Provider ----
+pub fn select_initial_provider(
+    last_provider: &str,
+    ui: &TerminalUi,
+) -> Result<InitialProviderSelection> {
+    let providers = ProviderFactory::available();
+
+    let mut items: Vec<String> = providers
+        .iter()
+        .map(|provider| provider.to_string())
+        .collect();
+
+    let exit_index = items.len();
+    items.push("Exit application".to_string());
+
+    let mut default_index = providers
+        .iter()
+        .position(|provider| *provider == last_provider)
+        .unwrap_or(0);
+
+    loop {
+        let index = match ui.select(
+            "Select LLM provider",
+            &items,
+            default_index,
+            None,
+        )? {
+            Some(index) => index,
+            None => continue,
+        };
+
+        if index == exit_index {
+            return Ok(InitialProviderSelection::Exit);
+        }
+
+        let provider_name = providers[index];
+        default_index = index;
+
+        match ProviderFactory::create(provider_name) {
+            Ok(provider) => {
+                return Ok(InitialProviderSelection::Selected(provider));
+            }
+            Err(error) => {
+                TerminalUi::error(&format!(
+                    "Failed to initialize provider '{}': {error:#}",
+                    provider_name
+                ));
+            }
+        }
+    }
+}
+
+// ---- Provider switching ----
 pub async fn select_provider(
     state: &mut AppState,
     ui: &TerminalUi,
 ) -> Result<String> {
     let providers = crate::provider::ProviderFactory::available();
-    let active_provider = state.provider.id();
-
     let labels = &ui.labels();
 
-    let mut items: Vec<String> = providers
-        .iter()
-        .map(|provider| {
-            if *provider == active_provider {
-                format!("{provider} {}", labels.active)
-            } else {
-                provider.to_string()
+    loop {
+        let active_provider = state.provider.id();
+
+        let mut items: Vec<String> = providers
+            .iter()
+            .map(|provider| {
+                if *provider == active_provider {
+                    format!("{provider} {}", labels.active)
+                } else {
+                    provider.to_string()
+                }
+            })
+            .collect();
+
+        let cancel_index = items.len();
+        items.push(labels.cancel.clone());
+
+        let default_index = providers
+            .iter()
+            .position(|provider| *provider == active_provider)
+            .unwrap_or(0);
+
+        let Some(index) = ui.select(
+            "Select LLM provider",
+            &items,
+            default_index,
+            None,
+        )? else {
+            return Ok("Provider selection cancelled.".to_string());
+        };
+
+        if index == cancel_index {
+            return Ok("Provider selection cancelled.".to_string());
+        }
+
+        let Some(selected) = providers.get(index) else {
+            TerminalUi::warning("Invalid provider selection.");
+            continue;
+        };
+
+        if *selected == active_provider {
+            return Ok(format!(
+                "Provider '{}' is already active.",
+                active_provider
+            ));
+        }
+
+        match state.switch_provider(selected).await {
+            Ok(()) => {
+                return Ok(format!(
+                    "Switched provider to '{}'. Current model: {}",
+                    state.provider.id(),
+                    state.current_model.id,
+                ));
             }
-        })
-        .collect();
-
-    let cancel_index = items.len();
-    items.push(labels.cancel.clone());
-
-    let default_index = providers
-        .iter()
-        .position(|provider| *provider == active_provider)
-        .unwrap_or(0);
-
-    let Some(index) = ui.select(
-        "Select LLM provider",
-        &items,
-        default_index,
-        None,
-    )? else {
-        return Ok("Provider selection cancelled.".to_string());
-    };
-
-    if index == cancel_index {
-        return Ok("Provider selection cancelled.".to_string());
+            Err(error) => {
+                TerminalUi::error(&format!(
+                    "Could not switch to provider '{selected}': {error:#}"
+                ));
+            }
+        }
     }
-
-    let selected = providers[index];
-
-    if selected == active_provider {
-        return Ok(format!(
-            "Provider '{}' is already active.",
-            selected
-        ));
-    }
-
-    state.switch_provider(selected).await?;
-
-    Ok(format!(
-        "Switched provider to '{}'. Current model: {}",
-        state.provider.id(),
-        state.current_model.id,
-    ))
 }
 
 // ---- Sessions and history ----

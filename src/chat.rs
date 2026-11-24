@@ -1,5 +1,6 @@
 use anyhow::Result;
 use crate::{
+    ui::TerminalUi,
     app::{
         AppContext,
         commands::execute_command,
@@ -33,7 +34,7 @@ pub async fn chat_loop(ctx: &mut AppContext) -> Result<()> {
         }
         
         if let Err(error) = run_stream(ctx, input).await {
-            ctx.ui.error(&format!("Agent error: {error}"));
+            TerminalUi::error(&format!("Agent error: {error}"));
         }
     }
 

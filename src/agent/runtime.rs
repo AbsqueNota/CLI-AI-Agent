@@ -10,6 +10,7 @@ use rig::{
     }
 };
 use crate::{
+    ui::TerminalUi,
     app::AppContext,
     dto::ChatSession,
     models::{
@@ -66,7 +67,7 @@ pub async fn run_stream(
             Ok(MultiTurnStreamItem::CompletionCall(call)) => {
                 let record = state.provider.parse_call_metrics(&model_id, &call.raw);
                 if let Err(error) = state.record_call(record) {
-                    ui.warning(&format!("Failed to record call stats: {error}"));
+                    TerminalUi::warning(&format!("Failed to record call stats: {error}"));
                 }
             }
             // ---- final ----
@@ -78,14 +79,14 @@ pub async fn run_stream(
                 state.session.history.extend(strip);
 
                 if let Err(error) = state.persist_session() {
-                    ui.warning(&format!("Failed to persist session: {error}"));
+                    TerminalUi::warning(&format!("Failed to persist session: {error}"));
                 }
             
                 ui.stream_finished(start.elapsed().as_secs_f64());
             }
             Err(err) => {
                 pb.finish_and_clear();
-                ui.stream_error(&model_id, &err);
+                TerminalUi::stream_error(&model_id, &err);
                 break;
             }
             _ => {}

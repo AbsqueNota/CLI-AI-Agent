@@ -20,7 +20,6 @@ use crate::{
         labels::MenuLabels,
         theme::{
             AppTheme,
-            preset::{error_color, warning_color},
         },
     },
 };
@@ -156,17 +155,17 @@ impl TerminalUi {
         );
     }
 
-    pub fn error(&self, message: &str) {
+    pub fn error(message: &str) {
         eprintln!(
             "\n{}",
-            message.color(error_color()).bold()
+            message.color(AppTheme::error_color()).bold()
         );
     }
 
-    pub fn warning(&self, message: &str) {
+    pub fn warning(message: &str) {
         eprintln!(
             "\n{}",
-            format!("Warning: {message}").color(warning_color())
+            format!("Warning: {message}").color(AppTheme::warning_color())
         );
     }
 
@@ -248,14 +247,13 @@ impl TerminalUi {
     }
 
     pub fn stream_error(
-        &self,
         model_id: &str,
         error: &impl std::fmt::Display,
     ) {
         eprintln!(
             "\n{}",
             format!("{model_id} error: {error}")
-                .color(error_color())
+                .color(AppTheme::error_color())
         );
     }
 
