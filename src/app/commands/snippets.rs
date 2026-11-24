@@ -335,21 +335,47 @@ fn change_theme(
     let presets = [
         ThemePreset::Neon,
         ThemePreset::Pink,
+        ThemePreset::Dark,
+        ThemePreset::Light,
     ];
+
+    let labels = ui.labels();
+    let active_label = labels.active.clone();
+    let cancel_label = labels.cancel.clone();
 
     let default_index = presets
         .iter()
         .position(|preset| *preset == state.config.theme)
         .unwrap_or(0);
 
+    // Формируем отображаемые пункты меню.
+    let mut items: Vec<String> = presets
+        .iter()
+        .map(|preset| {
+            if *preset == state.config.theme {
+                format!("{preset} {active_label}")
+            } else {
+                preset.to_string()
+            }
+        })
+        .collect();
+
+    let cancel_index = items.len();
+    items.push(cancel_label);
+
     let Some(index) = ui.select(
         "Select theme",
-        &presets,
+        &items,
         default_index,
         None,
     )? else {
         return Ok("Theme selection cancelled.".to_string());
     };
+
+    // Отдельный пункт Cancel.
+    if index == cancel_index {
+        return Ok("Theme selection cancelled.".to_string());
+    }
 
     let selected = presets[index];
 
@@ -357,11 +383,11 @@ fn change_theme(
         return Ok(format!("Theme '{selected}' is already active."));
     }
 
-    // Сначала сохраняем выбор в конфигурацию.
+    // Сохраняем выбранную тему.
     state.config.theme = selected;
     state.persist_config()?;
 
-    // Затем обновляем тему работающего UI.
+    // Применяем тему в текущем UI.
     ui.set_theme(AppTheme::from_preset(selected));
 
     Ok(format!("Theme changed to '{selected}'."))

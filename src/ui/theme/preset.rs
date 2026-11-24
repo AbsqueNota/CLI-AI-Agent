@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use colored::Color as ColoredColor;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -8,6 +8,8 @@ pub enum ThemePreset {
     #[default]
     Neon,
     Pink,
+    Dark,
+    Light,
 }
 
 impl fmt::Display for ThemePreset {
@@ -15,6 +17,8 @@ impl fmt::Display for ThemePreset {
         let name = match self {
             Self::Neon => "Neon",
             Self::Pink => "Pink",
+            Self::Dark => "Dark",
+            Self::Light => "Light",
         };
 
         f.write_str(name)
@@ -22,13 +26,13 @@ impl fmt::Display for ThemePreset {
 }
 
 pub struct Palette {
-    pub accent_pink:  ColoredColor,
-    pub accent_mint:  ColoredColor,
-    pub text_light:   ColoredColor,
-    pub text_muted:   ColoredColor,
-    pub dark_gray:    ColoredColor,
+    pub accent_pink: ColoredColor,
+    pub accent_mint: ColoredColor,
+    pub text_light: ColoredColor,
+    pub text_muted: ColoredColor,
+    pub dark_gray: ColoredColor,
     pub text_warning: ColoredColor,
-    pub text_error:   ColoredColor,
+    pub text_error: ColoredColor,
 }
 
 impl Palette {
@@ -52,6 +56,26 @@ impl Palette {
                 dark_gray: rgb(125, 105, 120),
                 text_warning: rgb(255, 190, 110),
                 text_error: rgb(255, 80, 120),
+            },
+
+            ThemePreset::Dark => Self {
+                accent_pink: rgb(255, 90, 160),
+                accent_mint: rgb(70, 230, 190),
+                text_light: rgb(230, 235, 245),
+                text_muted: rgb(145, 155, 175),
+                dark_gray: rgb(110, 120, 135),
+                text_warning: rgb(255, 190, 70),
+                text_error: rgb(255, 90, 100),
+            },
+
+            ThemePreset::Light => Self {
+                accent_pink: rgb(190, 35, 110),
+                accent_mint: rgb(0, 130, 115),
+                text_light: rgb(35, 40, 50),
+                text_muted: rgb(105, 110, 125),
+                dark_gray: rgb(115, 120, 130),
+                text_warning: rgb(165, 95, 0),
+                text_error: rgb(190, 35, 45),
             },
         }
     }

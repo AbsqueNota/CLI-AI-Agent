@@ -16,7 +16,6 @@ pub struct ProviderConfig {
 pub struct AppConfig {
     pub provider: String,
     pub providers: HashMap<String, ProviderConfig>,
-    #[serde(skip)]
     pub theme: ThemePreset,
     // We retain the memory used by the OS and applications.
     pub memory_reserve_bytes: u64,
