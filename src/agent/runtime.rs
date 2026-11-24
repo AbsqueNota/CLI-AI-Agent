@@ -12,26 +12,27 @@ use rig::{
         StreamEvent,
     }
 };
-use crate::dto::ChatSession;
 use crate::{
+    dto::ChatSession,
     app::state::AppState,
+    ui::TerminalUi,
     models::{
         capabilities::CapabilityKey
     }
 };
 
-pub async fn run_stream(state: &mut AppState,prompt: &str) -> Result<()> {
+pub async fn run_stream(
+    state: &mut AppState,
+    ui: &TerminalUi,
+    prompt: &str,
+) -> Result<()> {
     let start = Instant::now();
 
     let agent = state.agent.clone();
     let model_id = state.current_model.id.clone();
     let history = state.session.history.clone();
 
-    let spiner_part = "is thinking".color(state.config.theme.text_muted);
-    let msg = format!("\n🤖: {} {spiner_part}", model_id.color(state.config.theme.text_light));
-
-    let pb = build_spiner(state.config.theme.text_muted, msg);
-    pb.enable_steady_tick(Duration::from_millis(150));
+    let pb = ui.build_spinner(&model_id);
 
     stdout().flush()?;
 
@@ -107,24 +108,4 @@ pub async fn run_stream(state: &mut AppState,prompt: &str) -> Result<()> {
         }
     }
     Ok(())
-}
-
-
-pub fn build_spiner(color: ColoredColor, msg:String) -> ProgressBar{
-    let pb = ProgressBar::new_spinner();
-    let spinner = [
-        "".to_string(),
-        ".".color(color).to_string(),
-        "..".color(color).to_string(),
-        "...".color(color).to_string(),
-        "".to_string()
-    ];
-    pb.set_style(
-        ProgressStyle::default_spinner()
-            .tick_strings(&spinner.each_ref().map(|s| s.as_str()))
-            .template("{msg}{spinner}")
-            .unwrap(),
-    );
-    pb.set_message(msg);
-    return pb;
 }

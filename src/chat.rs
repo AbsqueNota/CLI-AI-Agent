@@ -1,60 +1,47 @@
 use anyhow::Result;
-use dialoguer::Input;
-use dialoguer::theme::Theme;
-use colored::Colorize;
-use std::io::{self, Write};
-
 use crate::{
-    app::{commands::execute_command, state::AppState},
+    app::{
+        AppContext,
+        commands::execute_command,
+    },
     agent::runtime::run_stream,
 };
 
-pub async fn chat_loop(
-    state: &mut AppState,
-) -> Result<()> {
-    println!("\n{}",
-        "✦ Local AI Assistant ✦".color(state.config.theme.text_light).bold());
-    println!("{} {} {}",
-        "Type".color(state.config.theme.text_muted),
-        "/help".color(state.config.theme.accent_pink).bold(),
-        "for commands.\n".color(state.config.theme.text_muted));
+pub async fn chat_loop(ctx: &mut AppContext) -> Result<()> {
+    ctx.ui.welcome();
    
     loop {
-        println!("{} {}", "🤖:",
-            state.current_model.id.color(state.config.theme.text_muted),
-        );
-        let input: String = Input::with_theme(&*state.config.theme.dialoguer_theme)
-            .with_prompt("You")
-            .interact_text()?;
-        let input = input.trim();
+        ctx.ui.model_prompt(&ctx.state.current_model.id);
 
-        print!("\x1b[2A\x1b[J");
-        io::stdout().flush()?;
-        
-        let mut formatted_line = String::new();
-            state
-            .config
-            .theme
-            .dialoguer_theme
-            .format_input_prompt_selection(&mut formatted_line, "You", input)?;
-        println!("{}", formatted_line);
+        let raw = ctx.ui.input("You",false)?;
+        let input = raw.trim();
+
+        ctx.ui.echo_input("You", input)?;
 
         if input.is_empty() {
             continue;
         }
 
         if input == "/exit" || input == "/q" {
-            println!("👋 {}", "Goodbye!".color(state.config.theme.accent_pink));
+            ctx.ui.goodbye();
             break;
         }
 
         if input.starts_with('/') {
-            execute_command(input, state).await?;
+            execute_command(
+                input,
+                &mut ctx.state,
+                &ctx.ui,
+            ).await?;
             continue;
         }
 
-        if let Err(error) = run_stream(state, input).await {
-            eprintln!("\nAgent error: {error}");
+        if let Err(error) = run_stream(
+            &mut ctx.state,
+            &ctx.ui,
+            input,
+        ).await {
+            ctx.ui.error(&format!("Agent error: {error}"));
         }
     }
 

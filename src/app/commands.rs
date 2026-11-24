@@ -1,7 +1,10 @@
 pub mod snippets;
 
 use anyhow::{Result};
-use crate::app::state::AppState;
+use crate::{
+    app::state::AppState,
+    ui::TerminalUi,
+};
 use super::commands::snippets::{
     settings_menu,
     select_provider,
@@ -21,6 +24,7 @@ use super::commands::snippets::{
 pub async fn execute_command(
     command: &str,
     state: &mut AppState,
+    ui: &TerminalUi,
 ) -> Result<bool> {
     let mut parts = command.trim().splitn(3, ' ');
     let cmd = parts.next().unwrap_or("");
@@ -30,21 +34,21 @@ pub async fn execute_command(
     let result: Result<String> = async {
         let msg = match cmd {
             // ---- Settings ----
-            "/settings"     | "/cfg"    => settings_menu(state).await?,
-            "/set"                      => handle_set_command(state, arg1, arg2)?,
+            "/settings"     | "/cfg"    => settings_menu(state, ui).await?,
+            "/set"                      => handle_set_command(state, ui, arg1, arg2)?,
 
             // ---- Provider ----
-            "/provider"     | "/pr"     => select_provider(state).await?,
+            "/provider"     | "/pr"     => select_provider(state, ui).await?,
             
             // ---- Sessions and history ----
             "/new"          | "/n"      => new_session(state)?,
-            "/sessions"     | "/ss"     => manage_sessions(state)?,
+            "/sessions"     | "/ss"     => manage_sessions(state, ui)?,
             "/undo"         | "/u"      => undo_last_turn(state)?,
             "/clear"        | "/cl"     => clear_history(state)?,
 
             // ---- Models ----
             "/models"       | "/mls"    => show_models(state),
-            "/model"        | "/ml"     => select_model(state).await?,
+            "/model"        | "/ml"     => select_model(state, ui).await?,
             "/capabilities" | "/cp"     => show_capabilities(state),            
             "/stop"         | "/st"     => stop_current_model(state).await?,
 

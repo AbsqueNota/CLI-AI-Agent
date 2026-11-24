@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use std::fmt::{Display, Write};
-use dialoguer::{theme::ColorfulTheme, Input, Select};
 use crate::{
+    ui::TerminalUi,
     app::state::AppState, 
     models::{
         CapabilityKey, 
@@ -16,20 +16,18 @@ use crate::{
 // ---- Provider ----
 pub async fn select_provider(
     state: &mut AppState,
+    ui: &TerminalUi,
 ) -> Result<String> {
     let providers = crate::provider::ProviderFactory::available();
     let active_provider = state.provider.id();
 
-    //labels ui stuff
     let labels = &state.config.theme.menu_labels;
-    let active_label = labels.active.clone();
-    let cancel_label = labels.cancel.clone();
 
     let mut items: Vec<String> = providers
         .iter()
         .map(|provider| {
             if *provider == active_provider {
-                format!("{provider} {active_label}")
+                format!("{provider} {}", labels.active)
             } else {
                 provider.to_string()
             }
@@ -37,22 +35,19 @@ pub async fn select_provider(
         .collect();
 
     let cancel_index = items.len();
-    items.push(cancel_label);
+    items.push(labels.cancel.clone());
 
     let default_index = providers
         .iter()
         .position(|provider| *provider == active_provider)
         .unwrap_or(0);
 
-    let selection = Select::with_theme(
-        &*state.config.theme.dialoguer_theme
-    )
-        .with_prompt("Select LLM provider")
-        .items(&items)
-        .default(default_index)
-        .interact_opt()?;
-
-    let Some(index) = selection else {
+    let Some(index) = ui.select(
+        "Select LLM provider",
+        &items,
+        default_index,
+        None,
+    )? else {
         return Ok("Provider selection cancelled.".to_string());
     };
 
@@ -97,65 +92,94 @@ pub fn clear_history(state: &mut AppState) -> Result<String> {
     Ok("Conversation history cleared.".to_string())
 }
 
-pub fn manage_sessions(state: &mut AppState) -> Result<String> {
+pub fn manage_sessions(
+    state: &mut AppState,
+    ui: &TerminalUi,
+) -> Result<String> {
     let sessions = state.storage.list_sessions()?;
+
     if sessions.is_empty() {
         return Ok("No saved sessions found.".to_string());
     }
 
-    let theme = &*state.config.theme.dialoguer_theme;
     let labels = &state.config.theme.menu_labels;
-    let active_label = labels.active.clone();
 
     let items: Vec<String> = sessions
         .iter()
-        .map(|s| {
-            let active = if s.id == state.session.id { 
-                format!(" {active_label}") 
-            } else { 
-                String::new() 
+        .map(|session| {
+            let active = if session.id == state.session.id {
+                format!(" {}", labels.active)
+            } else {
+                String::new()
             };
-            format!("{} ({} msgs, {}){}", s.title, s.message_count, s.updated_at, active)
+
+            format!(
+                "{} ({} msgs, {}){}",
+                session.title,
+                session.message_count,
+                session.updated_at,
+                active
+            )
         })
         .collect();
 
     let default_idx = sessions
         .iter()
-        .position(|s| s.id == state.session.id)
+        .position(|session| session.id == state.session.id)
         .unwrap_or(0);
 
-    let Some(selection) = Select::with_theme(theme)
-        .with_prompt("Select session")
-        .items(&items)
-        .default(default_idx)
-        .interact_opt()?
-    else {
+    let Some(selection) = ui.select(
+        "Select session",
+        &items,
+        default_idx,
+        None,
+    )? else {
         return Ok("Session selection cancelled.".to_string());
     };
 
     let chosen = &sessions[selection];
-    let actions = ["Switch to this session", "Delete this session", "Cancel"];
-    
-    let Some(action) = Select::with_theme(theme)
-        .with_prompt(format!("Action for '{}'", chosen.title))
-        .items(&actions)
-        .default(0)
-        .interact_opt()?
-    else {
+
+    let actions = [
+        "Switch to this session",
+        "Delete this session",
+        "Cancel",
+    ];
+
+    let Some(action) = ui.select(
+        &format!("Action for '{}'", chosen.title),
+        &actions,
+        0,
+        None,
+    )? else {
         return Ok("Action cancelled.".to_string());
     };
 
     match action {
         0 => {
             if chosen.id == state.session.id {
-                return Ok(format!("Session '{}' is already active.", chosen.title));
+                return Ok(format!(
+                    "Session '{}' is already active.",
+                    chosen.title
+                ));
             }
-            state.switch_session(&chosen.id, chosen.title.clone())?;
-            Ok(format!("Switched to session '{}'.", chosen.title))
+
+            state.switch_session(
+                &chosen.id,
+                chosen.title.clone(),
+            )?;
+
+            Ok(format!(
+                "Switched to session '{}'.",
+                chosen.title
+            ))
         }
         1 => {
             state.delete_session_by_id(&chosen.id)?;
-            Ok(format!("Deleted session '{}'.", chosen.title))
+
+            Ok(format!(
+                "Deleted session '{}'.",
+                chosen.title
+            ))
         }
         _ => Ok("Cancelled.".to_string()),
     }
@@ -180,13 +204,17 @@ pub fn show_models(state: &AppState) -> String{
     result
 }
 
-pub async fn select_model(state: &mut AppState) -> Result<String> {
+pub async fn select_model(
+    state: &mut AppState,
+    ui: &TerminalUi,
+) -> Result<String> {
     let labels = &state.config.theme.menu_labels;
+
     let models = state.registry
         .by_provider(state.provider.id());
 
     if models.is_empty() {
-        return Ok(String::from("No models available."));
+        return Ok("No models available.".to_string());
     }
 
     let names: Vec<String> = models
@@ -200,36 +228,39 @@ pub async fn select_model(state: &mut AppState) -> Result<String> {
         })
         .collect();
 
-    let default = names
+    let default = models
         .iter()
-        .position(|name| name == state.current_model_name())
+        .position(|model| {
+            model.id == state.current_model_name()
+        })
         .unwrap_or(0);
 
-    let selection = Select::with_theme(&*state.config.theme.dialoguer_theme)
-        .with_prompt("Select model")
-        .items(&names)
-        .default(default)
-        .interact_opt()?;
+    let Some(index) = ui.select(
+        "Select model",
+        &names,
+        default,
+        None,
+    )? else {
+        return Ok("Model selection cancelled.".to_string());
+    };
 
-    if let Some(index) = selection {
-        let selected = &names[index];
+    let selected = models[index].id.clone();
 
-        if selected == state.current_model_name() {
-            return Ok(format!("Model '{}' is already active.", selected));
-        }
-
-        state
-            .switch_model(selected)
-            .await
-            .map_err(|error| anyhow!("Could not switch model: {error}"))?;
-        state.persist_config()?;
-
-        return Ok(
-            format!("Switched to model: {selected}")
-        );
+    if selected == state.current_model_name() {
+        return Ok(format!(
+            "Model '{}' is already active.",
+            selected
+        ));
     }
 
-    Ok(String::from("Model selection cancelled."))
+    state
+        .switch_model(&selected)
+        .await
+        .map_err(|error| anyhow!("Could not switch model: {error}"))?;
+
+    state.persist_config()?;
+
+    Ok(format!("Switched to model: {selected}"))
 }
 
 pub fn show_capabilities(state: &AppState) -> String {
@@ -261,6 +292,7 @@ pub async fn stop_current_model(state: &AppState) -> Result<String> {
 // ---- Settings ----
 pub async fn settings_menu(
     state: &mut AppState,
+    ui: &TerminalUi,
 ) -> Result<String> {
     let items = [
         "Change provider",
@@ -268,23 +300,22 @@ pub async fn settings_menu(
         "Cancel",
     ];
 
-    let selection = Select::with_theme(
-        &*state.config.theme.dialoguer_theme
-    )
-        .with_prompt(format!(
+    let Some(selection) = ui.select(
+        &format!(
             "Settings [{} / {}]",
             state.provider.id(),
             state.current_model.id,
-        ))
-        .items(&items)
-        .default(0)
-        .interact_opt()?;
+        ),
+        &items,
+        0,
+        None,
+    )? else {
+        return Ok("Settings menu closed.".to_string());
+    };
 
     match selection {
-        Some(0) => select_provider(state).await,
-
-        Some(1) => Ok(show_settings(&state.current_model)),
-
+        0 => select_provider(state, ui).await,
+        1 => Ok(show_settings(&state.current_model)),
         _ => Ok("Settings menu closed.".to_string()),
     }
 }
@@ -336,37 +367,48 @@ fn show_settings(model: &Model) -> String {
 
 pub fn handle_set_command(
     state: &mut AppState,
+    ui: &TerminalUi,
     key: Option<&str>,
     val: Option<&str>,
 ) -> Result<String> {
     match (key, val) {
-       // Option 1: direct entry of `/set temperature 0.7`
         (Some(k), Some(v)) => {
             apply_setting(&mut state.current_model, k, v)?;
             state.rebuild_agent()?;
             state.persist_config()?;
-            Ok(format!("Updated '{k}' -> '{v}' and rebuilt agent."))
+
+            Ok(format!(
+                "Updated '{k}' -> '{v}' and rebuilt agent."
+            ))
         }
-        // Incomplete input for `/set temperature
+
         (Some(k), None) => {
-            let input: String = Input::with_theme(&ColorfulTheme::default())
-                .with_prompt(format!("Enter value for '{k}' (or 'default')"))
-                .interact_text()
-                .map_err(|e| anyhow!(e))?;
+            let input = ui.input(
+                &format!("Enter value for '{k}' (or 'default')"),
+                false,
+            )?;
 
             let trimmed = input.trim();
+
             apply_setting(&mut state.current_model, k, trimmed)?;
             state.rebuild_agent()?;
             state.persist_config()?;
-            Ok(format!("Updated '{k}' -> '{trimmed}' and rebuilt agent."))
+
+            Ok(format!(
+                "Updated '{k}' -> '{trimmed}' and rebuilt agent."
+            ))
         }
-       // Option 2: `/set` without arguments — interactive menu
-        (None, None) => interactive_settings_menu(state),
+
+        (None, None) => interactive_settings_menu(state, ui),
+
         (None, Some(_)) => unreachable!(),
     }
 }
 
-fn interactive_settings_menu(state: &mut AppState) -> Result<String> {
+fn interactive_settings_menu(
+    state: &mut AppState,
+    ui: &TerminalUi,
+) -> Result<String> {
     let mut changed = false;
 
     // Snapshot of initial settings for rollback if <Cancel> is selected
@@ -427,71 +469,117 @@ fn interactive_settings_menu(state: &mut AppState) -> Result<String> {
         let cancel_idx = items.len();
         items.push(cancel_label.clone());
 
-        let selection = Select::with_theme(&*state.config.theme.dialoguer_theme)
-            .with_prompt("Select parameter to edit")
-            .items(&items)
-            .default(0)
-            .max_length(12)
-            .interact_opt()
-            .map_err(|e| anyhow!(e))?;
-
+        let selection = ui.select(
+            "Select parameter to edit",
+            &items,
+            0,
+            Some(12),
+        )?;
+        
         match selection {
-            // --- [Cancel] ---
             None => {
                 state.current_model.preamble = initial_preamble;
                 state.current_model.settings = initial_settings;
+        
                 return Ok("Settings editing cancelled.".to_string());
             }
+        
             Some(idx) if idx == cancel_idx => {
                 state.current_model.preamble = initial_preamble;
                 state.current_model.settings = initial_settings;
+        
                 return Ok("Settings editing cancelled.".to_string());
             }
-            // --- [Save & Apply] ---
+        
             Some(idx) if idx == save_idx => break,
+        
             Some(idx) => {
-                let key = items[idx].split(':').next().unwrap_or("").trim();
+                let key = items[idx]
+                    .split(':')
+                    .next()
+                    .unwrap_or("")
+                    .trim();
+        
                 match key {
                     "thinking" => {
-                        let options = ["on", "off", "low", "medium", "high", "default", cancel_label.as_str()];
-                        let opt_idx = Select::with_theme(&*state.config.theme.dialoguer_theme)
-                            .with_prompt("Select thinking mode")
-                            .items(&options)
-                            .default(0)
-                            .interact()
-                            .map_err(|e| anyhow!(e))?;
-
+                        let options = [
+                            "on",
+                            "off",
+                            "low",
+                            "medium",
+                            "high",
+                            "default",
+                            cancel_label.as_str(),
+                        ];
+        
+                        let Some(opt_idx) = ui.select(
+                            "Select thinking mode",
+                            &options,
+                            0,
+                            None,
+                        )? else {
+                            continue;
+                        };
+        
                         let chosen = options[opt_idx];
+        
                         if chosen != cancel_label {
-                            apply_setting(&mut state.current_model, "thinking", chosen)?;
+                            apply_setting(
+                                &mut state.current_model,
+                                "thinking",
+                                chosen,
+                            )?;
+        
                             changed = true;
                         }
                     }
+        
                     "thinking_visible" => {
-                        let options = ["true", "false", cancel_label.as_str()];
-                        let opt_idx = Select::with_theme(&*state.config.theme.dialoguer_theme)
-                            .with_prompt("Show thinking output in chat?")
-                            .items(&options)
-                            .default(0)
-                            .interact()
-                            .map_err(|e| anyhow!(e))?;
-
+                        let options = [
+                            "true",
+                            "false",
+                            cancel_label.as_str(),
+                        ];
+        
+                        let Some(opt_idx) = ui.select(
+                            "Show thinking output in chat?",
+                            &options,
+                            0,
+                            None,
+                        )? else {
+                            continue;
+                        };
+        
                         let chosen = options[opt_idx];
+        
                         if chosen != cancel_label.as_str() {
-                            apply_setting(&mut state.current_model, "thinking_visible", chosen)?;
+                            apply_setting(
+                                &mut state.current_model,
+                                "thinking_visible",
+                                chosen,
+                            )?;
+        
                             changed = true;
                         }
                     }
+        
                     _ => {
-                        let val: String = Input::with_theme(&*state.config.theme.dialoguer_theme)
-                            .with_prompt(format!("New value for '{key}' ('default' to reset, Enter to cancel)"))
-                            .allow_empty(true)
-                            .interact_text()
-                            .map_err(|e| anyhow!(e))?;
-
+                        let val = ui.input(
+                            &format!(
+                                "New value for '{key}' ('default' to reset, Enter to cancel)"
+                            ),
+                            true,
+                        )?;
+        
                         let trimmed = val.trim();
+        
                         if !trimmed.is_empty() {
-                            apply_setting(&mut state.current_model, key, trimmed)?;
+                            apply_setting(
+                                &mut state.current_model,
+                                key,
+                                trimmed,
+                            )?;
+        
                             changed = true;
                         }
                     }

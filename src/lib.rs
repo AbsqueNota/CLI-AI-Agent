@@ -6,3 +6,4 @@ pub mod provider;
 pub mod dto;
 pub mod storage;
 pub mod services;
+pub mod ui;

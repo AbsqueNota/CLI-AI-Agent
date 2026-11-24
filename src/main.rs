@@ -1,10 +1,15 @@
 use anyhow::Result;
 use dialoguer::Select;
 use agent_rust::{
-    app::{config::AppConfig, state::AppState},
+    app::{
+        AppContext,
+        config::AppConfig,
+        state::AppState,
+    },
+    ui::TerminalUi,
     provider::{LlmProvider, ProviderFactory},
     storage::StorageManager,
-    chat
+    chat,
 };
 
 #[tokio::main]
@@ -37,13 +42,17 @@ async fn main() -> Result<()> {
     let provider: Box<dyn LlmProvider> =
         ProviderFactory::create(&config.provider)?;
 
-    let mut state = AppState::new(
-        provider,
-        config,
-        storage,
-    ).await?;
-
-    chat::chat_loop(&mut state).await?;
+        let state = AppState::new(
+            provider,
+            config,
+            storage,
+        ).await?;
+        
+        let ui = TerminalUi::new(state.config.theme.clone());
+        
+        let mut ctx = AppContext::new(state, ui);
+        
+        chat::chat_loop(&mut ctx).await?;
 
     Ok(())
 }
