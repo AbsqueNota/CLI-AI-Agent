@@ -1,6 +1,6 @@
 pub mod response;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result, Context};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::{json, Map, Value};
@@ -42,20 +42,22 @@ impl OllamaProvider {
             base_url: String::from("http://localhost:11434"),
         }
     }
-    async fn assemble_model(&self, tag_model: &TagModel) -> Result<Model, String> {
+    async fn assemble_model(&self, tag_model: &TagModel) -> Result<Model> {
         let url = format!("{}/api/show", self.base_url);
-        let response = self.http
+        let response = self
+            .http
             .post(url)
             .json(&json!({"model": tag_model.name}))
             .send()
             .await
-            .map_err(|e| format!("Request failed: {}", e))?
+            .context("Request failed")?
             .error_for_status()
-            .map_err(|e| format!("HTTP error: {}", e))?
+            .context("HTTP error")?
             .json::<ShowModel>()
             .await
-            .map_err(|e| format!("Failed to deserialize Ollama model: {}", e))?;
-        Model::try_from((response, tag_model, self.id))
+            .context("Failed to deserialize Ollama model")?;
+    
+        Model::try_from((response, tag_model, self.id)).map_err(|e| anyhow!(e))
     }
 }
 
@@ -140,12 +142,11 @@ impl LlmProvider for OllamaProvider {
             .await?;
 
         for item in response.models {
-            match self.assemble_model(&item).await {
-                Ok(model) => result.push(model),
-                Err(error) => {
-                    eprintln!( "Could not assemble model {}: {error:#}", item.name );
-                }
-            }
+            let model = self
+                .assemble_model(&item)
+                .await
+                .map_err(|e| anyhow!("Could not assemble model {}: {e}", item.name))?;
+                result.push(model);
         }
         Ok(result)
     }

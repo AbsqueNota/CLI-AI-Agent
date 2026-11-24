@@ -1,5 +1,5 @@
-use anyhow::Result;
-use colored::{Color as ColoredColor, Colorize};
+use anyhow::{Result, Context};
+use colored::{Colorize};
 use dialoguer::{
     theme::Theme,
     Input, Confirm, Select
@@ -15,13 +15,22 @@ use crate::app::theme::AppTheme;
 
 pub struct TerminalUi {
     theme: Arc<AppTheme>,
+    is_printed_reasoning:bool,
+    is_printed_text:bool,
 }
 
 impl TerminalUi {
     pub fn new(theme: AppTheme) -> Self {
         Self {
             theme: Arc::new(theme),
+            is_printed_reasoning: false,
+            is_printed_text: false
         }
+    }
+
+    fn init_printed_flag_stream(&mut self) {
+        self.is_printed_reasoning = false;
+        self.is_printed_text = false;
     }
 
     pub fn welcome(&self) {
@@ -68,7 +77,6 @@ impl TerminalUi {
 
         Ok(select.interact_opt()?)
     }
-
 
     pub fn input(
         &self,
@@ -134,7 +142,11 @@ impl TerminalUi {
         println!("\n{message}\n");
     }
 
-    pub fn build_spinner(&self, model_id: &str) -> ProgressBar {
+    pub fn warning(&self, message: &str) {
+        eprintln!("\nWarning: {message}");
+    }
+
+    pub fn build_spinner(&self, model_id: &str) -> Result<ProgressBar> {
         let color = self.theme.text_muted;
 
         let model = model_id.color(self.theme.text_light);
@@ -159,13 +171,39 @@ impl TerminalUi {
                     &spinner.each_ref().map(|s| s.as_str())
                 )
                 .template("{msg}{spinner}")
-                .expect("Invalid spinner template"),
+                .context("Invalid spinner template")?,
         );
 
         pb.set_message(message);
         pb.enable_steady_tick(Duration::from_millis(150));
+        io::stdout().flush()?;  
+        Ok(pb)
+    }
 
-        pb
+    pub fn write_text(&mut self, text: &str) -> Result<()> {
+        if self.is_printed_reasoning && !self.is_printed_text {
+            println!("\n");
+        }
+        print!("{text}");
+        io::stdout().flush()?;
+        self.is_printed_text = true;
+        Ok(())
+    }
+    
+    pub fn write_reasoning(&mut self, text: &str) -> Result<()> {
+        print!("{}", text.color(self.theme.dark_gray));
+        io::stdout().flush()?;
+        self.is_printed_reasoning = true;
+        Ok(())
+    }
+    
+    pub fn stream_finished(&mut self, elapsed_seconds: f64) {
+        self.init_printed_flag_stream();
+        println!("\nFinished in {elapsed_seconds:.2}s");
+    }
+
+    pub fn stream_error(&self, model_id: &str, error: &impl std::fmt::Display) {
+        eprintln!("\n{model_id} error: {error}");
     }
 
     pub fn theme(&self) -> &AppTheme {

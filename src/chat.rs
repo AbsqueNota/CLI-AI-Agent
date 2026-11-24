@@ -28,19 +28,11 @@ pub async fn chat_loop(ctx: &mut AppContext) -> Result<()> {
         }
 
         if input.starts_with('/') {
-            execute_command(
-                input,
-                &mut ctx.state,
-                &ctx.ui,
-            ).await?;
+            execute_command(input, ctx).await?;
             continue;
         }
-
-        if let Err(error) = run_stream(
-            &mut ctx.state,
-            &ctx.ui,
-            input,
-        ).await {
+        
+        if let Err(error) = run_stream(ctx, input).await {
             ctx.ui.error(&format!("Agent error: {error}"));
         }
     }

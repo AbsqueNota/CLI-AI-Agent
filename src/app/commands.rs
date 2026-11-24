@@ -1,10 +1,7 @@
 pub mod snippets;
 
 use anyhow::{Result};
-use crate::{
-    app::state::AppState,
-    ui::TerminalUi,
-};
+use crate::app::AppContext;
 use super::commands::snippets::{
     settings_menu,
     select_provider,
@@ -23,9 +20,9 @@ use super::commands::snippets::{
 
 pub async fn execute_command(
     command: &str,
-    state: &mut AppState,
-    ui: &TerminalUi,
+    ctx: &mut AppContext,
 ) -> Result<bool> {
+    let AppContext { state, ui } = ctx;
     let mut parts = command.trim().splitn(3, ' ');
     let cmd = parts.next().unwrap_or("");
     let arg1 = parts.next();
@@ -62,12 +59,12 @@ pub async fn execute_command(
     }.await;
 
     match result {
-        Ok(status_message) => {
-            println!("\n{status_message}\n");
+        Ok(message) => {
+            ui.info(&message);
             Ok(true)
         }
-        Err(e) => {
-            eprintln!("\n [err][execute_command]: {e:#}\n");
+        Err(error) => {
+            ui.error(&format!("[execute_command]: {error:#}"));
             Ok(false)
         }
     }
