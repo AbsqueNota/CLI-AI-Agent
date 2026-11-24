@@ -1,3 +1,6 @@
+pub mod theme;
+pub mod labels;
+
 use anyhow::{Result, Context};
 use colored::{Colorize};
 use dialoguer::{
@@ -11,10 +14,13 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use crate::app::theme::AppTheme;
+use crate::ui::theme::AppTheme;
+use crate::ui::labels::MenuLabels;
+
 
 pub struct TerminalUi {
     theme: Arc<AppTheme>,
+    menu_labels: MenuLabels,
     is_printed_reasoning:bool,
     is_printed_text:bool,
 }
@@ -23,9 +29,14 @@ impl TerminalUi {
     pub fn new(theme: AppTheme) -> Self {
         Self {
             theme: Arc::new(theme),
+            menu_labels: MenuLabels::default(),
             is_printed_reasoning: false,
             is_printed_text: false
         }
+    }
+
+    pub fn set_theme(&mut self, theme: AppTheme) {
+        self.theme = Arc::new(theme);
     }
 
     fn init_printed_flag_stream(&mut self) {
@@ -135,15 +146,22 @@ impl TerminalUi {
     }
 
     pub fn error(&self, message: &str) {
-        eprintln!("\n{message}");
+        eprintln!(
+            "\n{}",
+            message.color(self.theme.text_error).bold()
+        );
+    }
+
+    pub fn warning(&self, message: &str) {
+        eprintln!(
+            "\n{}",
+            format!("Warning: {message}")
+                .color(self.theme.text_warning)
+        );
     }
 
     pub fn info(&self, message: &str) {
         println!("\n{message}\n");
-    }
-
-    pub fn warning(&self, message: &str) {
-        eprintln!("\nWarning: {message}");
     }
 
     pub fn build_spinner(&self, model_id: &str) -> Result<ProgressBar> {
@@ -202,11 +220,23 @@ impl TerminalUi {
         println!("\nFinished in {elapsed_seconds:.2}s");
     }
 
-    pub fn stream_error(&self, model_id: &str, error: &impl std::fmt::Display) {
-        eprintln!("\n{model_id} error: {error}");
+    pub fn stream_error(
+        &self,
+        model_id: &str,
+        error: &impl std::fmt::Display,
+    ) {
+        eprintln!(
+            "\n{}",
+            format!("{model_id} error: {error}")
+                .color(self.theme.text_error)
+        );
     }
 
     pub fn theme(&self) -> &AppTheme {
         &self.theme
+    }
+
+    pub fn labels(&self) -> &MenuLabels {
+        &self.menu_labels
     }
 }

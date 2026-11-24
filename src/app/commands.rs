@@ -44,7 +44,7 @@ pub async fn execute_command(
             "/clear"        | "/cl"     => clear_history(state)?,
 
             // ---- Models ----
-            "/models"       | "/mls"    => show_models(state),
+            "/models"       | "/mls"    => show_models(state, ui),
             "/model"        | "/ml"     => select_model(state, ui).await?,
             "/capabilities" | "/cp"     => show_capabilities(state),            
             "/stop"         | "/st"     => stop_current_model(state).await?,

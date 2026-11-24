@@ -5,7 +5,10 @@ use agent_rust::{
         config::AppConfig,
         state::AppState,
     },
-    ui::TerminalUi,
+    ui::{
+        TerminalUi,
+        theme::AppTheme
+    },
     provider::{LlmProvider, ProviderFactory},
     storage::StorageManager,
     chat,
@@ -28,7 +31,9 @@ async fn main() -> Result<()> {
         ),
     };
     
-    let ui = TerminalUi::new(config.theme.clone());
+    let ui = TerminalUi::new(
+        AppTheme::from_preset(config.theme)
+    );
     
     if let Some(warning) = config_warning {
         ui.warning(&warning);

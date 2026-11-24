@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
-use super::theme::AppTheme;
+use crate::ui::theme::preset::ThemePreset;
 use crate::dto::SavedModelProfile;
 
 
@@ -17,7 +17,7 @@ pub struct AppConfig {
     pub provider: String,
     pub providers: HashMap<String, ProviderConfig>,
     #[serde(skip)]
-    pub theme: AppTheme,
+    pub theme: ThemePreset,
     // We retain the memory used by the OS and applications.
     pub memory_reserve_bytes: u64,
     // Buffer for KV-cache, context, and runtime.
@@ -29,7 +29,7 @@ impl Default for AppConfig {
         Self {
             provider: "ollama".into(),
             providers: HashMap::new(),
-            theme:     AppTheme::default(),
+            theme:     ThemePreset::default(),
             memory_reserve_bytes: 2 * 1024 * 1024 * 1024,
             model_memory_multiplier: 1.35,
         }

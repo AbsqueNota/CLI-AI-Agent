@@ -1,7 +1,13 @@
 use anyhow::{anyhow, Result};
 use std::fmt::{Display, Write};
 use crate::{
-    ui::TerminalUi,
+    ui::{
+        TerminalUi,
+        theme::{
+            AppTheme,
+            preset::ThemePreset
+        }
+    },
     app::state::AppState, 
     models::{
         CapabilityKey, 
@@ -21,7 +27,7 @@ pub async fn select_provider(
     let providers = crate::provider::ProviderFactory::available();
     let active_provider = state.provider.id();
 
-    let labels = &state.config.theme.menu_labels;
+    let labels = &ui.labels();
 
     let mut items: Vec<String> = providers
         .iter()
@@ -102,7 +108,7 @@ pub fn manage_sessions(
         return Ok("No saved sessions found.".to_string());
     }
 
-    let labels = &state.config.theme.menu_labels;
+    let labels = &ui.labels();
 
     let items: Vec<String> = sessions
         .iter()
@@ -186,8 +192,8 @@ pub fn manage_sessions(
 }
 
 // ---- Models ----
-pub fn show_models(state: &AppState) -> String{
-    let labels = &state.config.theme.menu_labels;
+pub fn show_models(state: &AppState, ui: &TerminalUi,) -> String{
+    let labels = &ui.labels();
     let active_label = labels.active.clone();
 
     let mut result = String::from("\nAvailable models:\n");
@@ -208,7 +214,7 @@ pub async fn select_model(
     state: &mut AppState,
     ui: &TerminalUi,
 ) -> Result<String> {
-    let labels = &state.config.theme.menu_labels;
+    let labels = &ui.labels();
 
     let models = state.registry
         .by_provider(state.provider.id());
@@ -292,11 +298,12 @@ pub async fn stop_current_model(state: &AppState) -> Result<String> {
 // ---- Settings ----
 pub async fn settings_menu(
     state: &mut AppState,
-    ui: &TerminalUi,
+    ui: &mut TerminalUi,
 ) -> Result<String> {
     let items = [
         "Change provider",
         "Show current model settings",
+        "Change theme",
         "Cancel",
     ];
 
@@ -316,8 +323,48 @@ pub async fn settings_menu(
     match selection {
         0 => select_provider(state, ui).await,
         1 => Ok(show_settings(&state.current_model)),
+        2 => change_theme(state, ui),
         _ => Ok("Settings menu closed.".to_string()),
     }
+}
+
+fn change_theme(
+    state: &mut AppState,
+    ui: &mut TerminalUi,
+) -> Result<String> {
+    let presets = [
+        ThemePreset::Neon,
+        ThemePreset::Pink,
+    ];
+
+    let default_index = presets
+        .iter()
+        .position(|preset| *preset == state.config.theme)
+        .unwrap_or(0);
+
+    let Some(index) = ui.select(
+        "Select theme",
+        &presets,
+        default_index,
+        None,
+    )? else {
+        return Ok("Theme selection cancelled.".to_string());
+    };
+
+    let selected = presets[index];
+
+    if selected == state.config.theme {
+        return Ok(format!("Theme '{selected}' is already active."));
+    }
+
+    // Сначала сохраняем выбор в конфигурацию.
+    state.config.theme = selected;
+    state.persist_config()?;
+
+    // Затем обновляем тему работающего UI.
+    ui.set_theme(AppTheme::from_preset(selected));
+
+    Ok(format!("Theme changed to '{selected}'."))
 }
 
 fn show_settings(model: &Model) -> String {
@@ -419,7 +466,7 @@ fn interactive_settings_menu(
         let model = &state.current_model;
         let settings = &model.settings;
         
-        let labels = &state.config.theme.menu_labels;
+        let labels = &ui.labels();
         let visible_label = labels.visible.clone();
         let hidden_label  = labels.hidden.clone();
         let default_label = labels.default.clone();
