@@ -8,7 +8,7 @@ use crate::{
 };
 
 pub async fn chat_loop(ctx: &mut AppContext) -> Result<()> {
-    ctx.ui.welcome();
+    ctx.ui.welcome_title();
    
     loop {
         ctx.ui.model_prompt(&ctx.state.current_model.id);

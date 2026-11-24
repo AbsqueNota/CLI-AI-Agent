@@ -9,7 +9,9 @@ use agent_rust::{
         TerminalUi,
         theme::AppTheme
     },
-    provider::{LlmProvider, ProviderFactory},
+    provider::{
+        LlmProvider, ProviderFactory
+    },
     storage::StorageManager,
     chat,
 };

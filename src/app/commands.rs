@@ -1,6 +1,6 @@
 pub mod snippets;
 
-use anyhow::{Result};
+use anyhow::Result;
 use crate::app::AppContext;
 use super::commands::snippets::{
     settings_menu,
