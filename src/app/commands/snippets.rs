@@ -156,13 +156,13 @@ pub async fn undo_last_turn(state: &mut AppState) -> Result<String> {
             "Nothing to undo — conversation history is empty.".to_string()
         );
     }
-    state.undo_last_turn().await?;
+    state.undo_last_turn().await;
 
     Ok("Removed last user message and model response.".to_string())
 }
 
 pub async fn clear_history(state: &mut AppState) -> Result<String> {
-    state.clear_current_session().await?;
+    state.clear_current_session().await;
     Ok("Conversation history cleared.".to_string())
 }
 
@@ -240,7 +240,7 @@ pub async fn manage_sessions(
             state.switch_session(
                 &chosen.id,
                 chosen.title.clone(),
-            )?;
+            ).await?;
 
             Ok(format!(
                 "Switched to session '{}'.",

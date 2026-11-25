@@ -1,8 +1,13 @@
-use std::future::Future;
-use tokio::sync::watch;
-use tokio::task::JoinHandle;
+use std::{
+    future::Future,
+    time::Duration,
+};
 
-/// A universal background worker that processes the latest current state of `T`.
+use tokio::{
+    sync::watch,
+    task::JoinHandle,
+};
+
 pub struct WatchWorker<T> {
     tx: watch::Sender<Option<T>>,
     handle: JoinHandle<()>,
@@ -12,8 +17,18 @@ impl<T> WatchWorker<T>
 where
     T: Clone + Send + Sync + 'static,
 {
-    /// Launches a background task that reacts to each new value in the channel.
-    pub fn spawn<F, Fut>(mut handler: F) -> Self
+    pub fn spawn<F, Fut>(handler: F) -> Self
+    where
+        F: FnMut(T) -> Fut + Send + 'static,
+        Fut: Future<Output = ()> + Send,
+    {
+        Self::spawn_with_debounce(Duration::ZERO, handler)
+    }
+
+    pub fn spawn_with_debounce<F, Fut>(
+        debounce: Duration,
+        mut handler: F,
+    ) -> Self
     where
         F: FnMut(T) -> Fut + Send + 'static,
         Fut: Future<Output = ()> + Send,
@@ -22,7 +37,10 @@ where
 
         let handle = tokio::spawn(async move {
             while rx.changed().await.is_ok() {
-                // Retrieve the latest value and reset the change flag
+                if !debounce.is_zero() {
+                    tokio::time::sleep(debounce).await;
+                }
+
                 let latest = rx.borrow_and_update().clone();
 
                 if let Some(payload) = latest {
@@ -34,12 +52,10 @@ where
         Self { tx, handle }
     }
 
-    /// Non-blocking dispatch of the new state to a worker.
     pub fn dispatch(&self, payload: T) {
         let _ = self.tx.send(Some(payload));
     }
 
-    /// Graceful shutdown: closes the channel and waits for the current background task to complete.
     pub async fn shutdown(self) {
         drop(self.tx);
         let _ = self.handle.await;

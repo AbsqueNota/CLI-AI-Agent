@@ -1,13 +1,14 @@
-mod mpsc_db;
+pub mod mpsc_db;
 mod json;
 mod sqlite;
 
 use std::fs;
+use tokio::sync::mpsc;
 use anyhow::{Context, Result};
 use directories::ProjectDirs;
 use uuid::Uuid;
 
-use self::mpsc_db::DbActor;
+use self::mpsc_db::{DbActor, DbCommand};
 use self::json::JsonStore;
 use self::sqlite::SqliteStore;
 
@@ -45,6 +46,10 @@ impl StorageManager {
             db_store,
             db_actor,
         })
+    }
+
+    pub(crate) fn db_sender(&self) -> mpsc::UnboundedSender<DbCommand> {
+        self.db_actor.sender()
     }
 
     // --- Config ---

@@ -80,11 +80,7 @@ pub async fn run_stream(
                 state.session.history.push(Message::user(prompt));
                 state.session.history.extend(strip);
 
-                if let Err(error) = state.persist_session().await {
-                    TerminalUi::warning(
-                        &format!("Failed to persist session: {error}")
-                    );
-                }
+                state.persist_session();
             
                 ui.stream_finished(start.elapsed().as_secs_f64());
             }

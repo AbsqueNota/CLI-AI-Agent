@@ -1,3 +1,7 @@
+use std::time::Duration;
+use tokio::{
+    sync::{mpsc, oneshot},
+};
 use anyhow::Result;
 use rig::{
     agent::Agent,
@@ -9,6 +13,8 @@ use crate::{
     provider::{LlmProvider, ProviderFactory}, 
     storage::StorageManager,
     app::config::AppConfig,
+    services::watch_worker::WatchWorker,
+    storage::mpsc_db::DbCommand,
 };
 
 pub struct AppState {
@@ -20,6 +26,7 @@ pub struct AppState {
     pub agent:         Agent,
     pub session:       ChatSession,
     pub stats:         CallsStats,
+    session_worker: Option<WatchWorker<ChatSession>>,
 }
 
 impl AppState {
@@ -59,7 +66,9 @@ impl AppState {
         let stats_records = storage.load_session_stats(&session.id)?;
     
         let agent = AgentFactory::build(&provider, &selected)?;
-    
+        
+        let db_tx = storage.db_sender();
+        let session_worker = Some(Self::create_session_worker(db_tx));
         Ok(Self {
             config,
             provider,
@@ -69,7 +78,66 @@ impl AppState {
             session,
             storage,
             stats: CallsStats { calls: stats_records },
+            session_worker
         })
+    }
+    
+    // ---- Session Worker ----
+    fn create_session_worker(
+        db_tx: mpsc::UnboundedSender<DbCommand>,
+    ) -> WatchWorker<ChatSession> {
+        WatchWorker::spawn_with_debounce(
+            Duration::from_millis(100),
+            move |session| {
+                let db_tx = db_tx.clone();
+    
+                async move {
+                    let (reply_tx, reply_rx) = oneshot::channel();
+    
+                    if db_tx
+                        .send(DbCommand::SaveSession {
+                            session,
+                            reply: reply_tx,
+                        })
+                        .is_err()
+                    {
+                        eprintln!("[session-persist] Database actor is unavailable");
+                        return;
+                    }
+    
+                    match reply_rx.await {
+                        Ok(Ok(())) => {}
+                        Ok(Err(error)) => {
+                            eprintln!(
+                                "[session-persist] Failed to save session: {error}"
+                            );
+                        }
+                        Err(error) => {
+                            eprintln!(
+                                "[session-persist] Database response was dropped: {error}"
+                            );
+                        }
+                    }
+                }
+            },
+        )
+    }
+    
+    fn dispatch_session(&self) {
+        if let Some(worker) = &self.session_worker {
+            worker.dispatch(self.session.clone());
+        }
+    }
+    
+    pub async fn stop_session_worker(&mut self) {
+        if let Some(worker) = self.session_worker.take() {
+            worker.shutdown().await;
+        }
+    }
+    
+    fn start_session_worker(&mut self) {
+        let db_tx = self.storage.db_sender();
+        self.session_worker = Some(Self::create_session_worker(db_tx));
     }
     
     // ---- Save current state ----
@@ -256,75 +324,105 @@ impl AppState {
     }
     
     // ---- Session ----
-    pub fn switch_session(&mut self, session_id: &str, title: String) -> Result<()> {
-        self.session = self.storage.load_session(session_id, title)?;
-        let records = self.storage.load_session_stats(session_id)?;
-        self.stats = CallsStats::new(records);
-        Ok(())
-    }
-    
-    pub fn clear_history(&mut self) {
-        self.session.history.clear();
+pub async fn switch_session(
+    &mut self,
+    session_id: &str,
+    title: String,
+) -> Result<()> {
+    let session = self.storage.load_session(session_id, title)?;
+    let records = self.storage.load_session_stats(session_id)?;
+
+    self.stop_session_worker().await;
+
+    self.session = session;
+    self.stats = CallsStats::new(records);
+
+    self.start_session_worker();
+
+    Ok(())
+}
+
+pub fn clear_history(&mut self) {
+    self.session.history.clear();
+    self.dispatch_session();
+}
+
+pub fn persist_session(&mut self) {
+    if self.session.title == "Default Session" {
+        if let Some(first_msg) = self.session.history.first() {
+            let raw = format!("{first_msg:?}");
+            self.session.title = raw.chars().take(40).collect();
+        }
     }
 
-    pub async fn persist_session(&mut self) -> Result<()> {
-        if self.session.title == "Default Session" {
-            if let Some(first_msg) = self.session.history.first() {
-                let raw = format!("{first_msg:?}");
-                self.session.title = raw.chars().take(40).collect();
+    self.dispatch_session();
+}
+
+pub async fn record_call(&mut self, mut record: CallRecord) -> Result<()> {
+    record.session_id = self.session.id.clone();
+
+    self.storage.insert_call_stat(&record).await?;
+    self.stats.calls.push(record);
+
+    Ok(())
+}
+
+pub async fn undo_last_turn(&mut self) {
+    self.session.undo_last_turn();
+    self.dispatch_session();
+}
+
+pub async fn clear_current_session(&mut self) {
+    self.session.history.clear();
+    self.dispatch_session();
+}
+
+pub async fn start_new_session(&mut self) -> Result<()> {
+    let new_id = StorageManager::generate_session_id();
+
+    let new_session = ChatSession::new(new_id, "Default Session");
+
+    self.stop_session_worker().await;
+
+    self.session = new_session;
+    self.stats.calls.clear();
+
+    self.start_session_worker();
+    self.dispatch_session();
+
+    Ok(())
+}
+
+pub async fn delete_session_by_id(&mut self, id: &str) -> Result<bool> {
+    let is_active = self.session.id == id;
+
+    if is_active {
+        self.stop_session_worker().await;
+    }
+
+    let deleted = match self.storage.delete_session(id).await {
+        Ok(deleted) => deleted,
+        Err(error) => {
+            if is_active {
+                self.start_session_worker();
             }
+            return Err(error);
         }
-    
-        self.storage.save_session(&self.session).await
+    };
+
+    if deleted && is_active {
+        self.session = self.storage.load_latest_or_create_session()?;
+
+        self.stats.calls = self.storage.load_session_stats(
+            &self.session.id,
+        )?;
+
+        self.start_session_worker();
+    } else if is_active {
+        // Удаление не произошло — возвращаем worker текущей сессии.
+        self.start_session_worker();
     }
 
-    pub async fn record_call(&mut self, mut record: CallRecord) -> Result<()> {
-        record.session_id = self.session.id.clone();
-    
-        self.storage.insert_call_stat(&record).await?;
-        self.stats.calls.push(record);
-    
-        Ok(())
-    }
-
-    pub async fn undo_last_turn(&mut self) -> Result<()> {
-        self.session.undo_last_turn();
-        self.storage.save_session(&self.session).await
-    }
-
-    pub async fn clear_current_session(&mut self) -> Result<()> {
-        self.session.history.clear();
-        self.storage
-            .clear_session_messages(&self.session.id)
-            .await
-    }
-
-    pub async fn start_new_session(&mut self) -> Result<()> {
-        let new_id = format!(
-            "session_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs()
-        );
-    
-        self.session = ChatSession::new(new_id, "Default Session");
-        self.stats.calls.clear();
-    
-        self.storage.save_session(&self.session).await
-    }
-
-    pub async fn delete_session_by_id(&mut self, id: &str) -> Result<bool> {
-        let deleted = self.storage.delete_session(id).await?;
-    
-        if deleted && self.session.id == id {
-            self.session = self.storage.load_latest_or_create_session()?;
-    
-            self.stats.calls = self.storage.load_session_stats(
-                &self.session.id,
-            )?;
-        }
-    
-        Ok(deleted)
-    }
+    Ok(deleted)
+}
 }
