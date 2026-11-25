@@ -51,7 +51,11 @@ async fn main() -> Result<()> {
 
     let mut ctx = AppContext::new(state, ui);
 
-    chat::chat_loop(&mut ctx).await?;
+    let chat_result = chat::chat_loop(&mut ctx).await;
+    
+    let shutdown_result = ctx.state.storage.shutdown().await;
 
+    chat_result?;
+    shutdown_result?;
     Ok(())
 }

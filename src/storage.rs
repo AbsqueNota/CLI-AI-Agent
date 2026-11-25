@@ -1,3 +1,4 @@
+mod mpsc_db;
 mod json;
 mod sqlite;
 
@@ -6,14 +7,17 @@ use anyhow::{Context, Result};
 use directories::ProjectDirs;
 use uuid::Uuid;
 
+use self::mpsc_db::DbActor;
 use self::json::JsonStore;
 use self::sqlite::SqliteStore;
+
 use crate::app::config::AppConfig;
 use crate::dto::{CallRecord, ChatSession, SessionSummary};
 
 pub struct StorageManager {
     config_store: JsonStore,
     db_store: SqliteStore,
+    db_actor: DbActor,
 }
 
 impl StorageManager {
@@ -27,9 +31,19 @@ impl StorageManager {
         fs::create_dir_all(config_dir)?;
         fs::create_dir_all(data_dir)?;
 
+        let db_name = format!("{app_name}.db");
+
+        let db_store = SqliteStore::open(data_dir, &db_name)?;
+
+        let db_actor = DbActor::spawn(
+            data_dir.to_path_buf(),
+            db_name,
+        )?;
+
         Ok(Self {
             config_store: JsonStore::new(config_dir, "config.json"),
-            db_store: SqliteStore::open(data_dir, format!("{app_name}.db").as_str())?,
+            db_store,
+            db_actor,
         })
     }
 
@@ -45,18 +59,25 @@ impl StorageManager {
 
     // --- Sessions ---
 
-    pub fn save_session(&mut self, session: &ChatSession) -> Result<()> {
-        self.db_store.save_session(session)
+    pub async fn save_session(&self, session: &ChatSession) -> Result<()> {
+        self.db_actor.save_session(session.clone()).await
     }
 
     pub fn load_latest_or_create_session(&self) -> Result<ChatSession> {
         match self.db_store.load_latest_session()? {
             Some(session) => Ok(session),
-            None => Ok(ChatSession::new(Self::generate_session_id(), "Default Session")),
+            None => Ok(ChatSession::new(
+                Self::generate_session_id(),
+                "Default Session",
+            )),
         }
     }
 
-    pub fn load_session(&self, session_id: &str, title: String) -> Result<ChatSession> {
+    pub fn load_session(
+        &self,
+        session_id: &str,
+        title: String,
+    ) -> Result<ChatSession> {
         self.db_store.load_session(session_id, title)
     }
 
@@ -64,26 +85,34 @@ impl StorageManager {
         self.db_store.list_sessions()
     }
 
-    pub fn delete_session(&self, session_id: &str) -> Result<bool> {
-        self.db_store.delete_session(session_id)
+    pub async fn delete_session(&self, session_id: &str) -> Result<bool> {
+        self.db_actor
+            .delete_session(session_id.to_string())
+            .await
     }
 
-    pub fn clear_session_messages(&self, session_id: &str) -> Result<()> {
-        self.db_store.clear_session_messages(session_id)
+    pub async fn clear_session_messages(&self, session_id: &str) -> Result<()> {
+        self.db_actor
+            .clear_session_messages(session_id.to_string())
+            .await
     }
 
     // --- Stats ---
 
-    pub fn insert_call_stat(&self, rec: &CallRecord) -> Result<()> {
-        self.db_store.insert_call_stat(rec)
+    pub async fn insert_call_stat(&self, rec: &CallRecord) -> Result<()> {
+        self.db_actor.insert_call_stat(rec.clone()).await
     }
 
     pub fn load_session_stats(&self, session_id: &str) -> Result<Vec<CallRecord>> {
         self.db_store.load_session_stats(session_id)
     }
 
-    pub fn clear_stats(&self) -> Result<()> {
-        self.db_store.clear_stats()
+    pub async fn clear_stats(&self) -> Result<()> {
+        self.db_actor.clear_stats().await
+    }
+
+    pub async fn shutdown(&mut self) -> Result<()> {
+        self.db_actor.shutdown().await
     }
 
     pub fn generate_session_id() -> String {

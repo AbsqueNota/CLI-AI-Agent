@@ -267,35 +267,39 @@ impl AppState {
         self.session.history.clear();
     }
 
-    pub fn persist_session(&mut self) -> Result<()> {
-        // If this is the first message in a new session, we generate a title from it.
+    pub async fn persist_session(&mut self) -> Result<()> {
         if self.session.title == "Default Session" {
             if let Some(first_msg) = self.session.history.first() {
                 let raw = format!("{first_msg:?}");
                 self.session.title = raw.chars().take(40).collect();
             }
         }
-        self.storage.save_session(&self.session)
+    
+        self.storage.save_session(&self.session).await
     }
 
-    pub fn record_call(&mut self, mut record: CallRecord) -> Result<()> {
+    pub async fn record_call(&mut self, mut record: CallRecord) -> Result<()> {
         record.session_id = self.session.id.clone();
-        self.storage.insert_call_stat(&record)?;
+    
+        self.storage.insert_call_stat(&record).await?;
         self.stats.calls.push(record);
+    
         Ok(())
     }
 
-    pub fn undo_last_turn(&mut self) -> Result<()> {
+    pub async fn undo_last_turn(&mut self) -> Result<()> {
         self.session.undo_last_turn();
-        self.storage.save_session(&self.session)
+        self.storage.save_session(&self.session).await
     }
 
-    pub fn clear_current_session(&mut self) -> Result<()> {
+    pub async fn clear_current_session(&mut self) -> Result<()> {
         self.session.history.clear();
-        self.storage.clear_session_messages(&self.session.id)
+        self.storage
+            .clear_session_messages(&self.session.id)
+            .await
     }
 
-    pub fn start_new_session(&mut self) -> Result<()> {
+    pub async fn start_new_session(&mut self) -> Result<()> {
         let new_id = format!(
             "session_{}",
             std::time::SystemTime::now()
@@ -303,17 +307,24 @@ impl AppState {
                 .unwrap_or_default()
                 .as_secs()
         );
+    
         self.session = ChatSession::new(new_id, "Default Session");
         self.stats.calls.clear();
-        self.storage.save_session(&self.session)
+    
+        self.storage.save_session(&self.session).await
     }
 
-    pub fn delete_session_by_id(&mut self, id: &str) -> Result<bool> {
-        let deleted = self.storage.delete_session(id)?;
+    pub async fn delete_session_by_id(&mut self, id: &str) -> Result<bool> {
+        let deleted = self.storage.delete_session(id).await?;
+    
         if deleted && self.session.id == id {
             self.session = self.storage.load_latest_or_create_session()?;
-            self.stats.calls = self.storage.load_session_stats(&self.session.id)?;
+    
+            self.stats.calls = self.storage.load_session_stats(
+                &self.session.id,
+            )?;
         }
+    
         Ok(deleted)
     }
 }

@@ -66,8 +66,10 @@ pub async fn run_stream(
             // ---- CompletionCall ----
             Ok(MultiTurnStreamItem::CompletionCall(call)) => {
                 let record = state.provider.parse_call_metrics(&model_id, &call.raw);
-                if let Err(error) = state.record_call(record) {
-                    TerminalUi::warning(&format!("Failed to record call stats: {error}"));
+                if let Err(error) = state.record_call(record).await {
+                    TerminalUi::warning(
+                        &format!("Failed to record call stats: {error}")
+                    );
                 }
             }
             // ---- final ----
@@ -78,8 +80,10 @@ pub async fn run_stream(
                 state.session.history.push(Message::user(prompt));
                 state.session.history.extend(strip);
 
-                if let Err(error) = state.persist_session() {
-                    TerminalUi::warning(&format!("Failed to persist session: {error}"));
+                if let Err(error) = state.persist_session().await {
+                    TerminalUi::warning(
+                        &format!("Failed to persist session: {error}")
+                    );
                 }
             
                 ui.stream_finished(start.elapsed().as_secs_f64());

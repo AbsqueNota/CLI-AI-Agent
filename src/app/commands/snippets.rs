@@ -73,7 +73,6 @@ pub fn select_initial_provider(
     }
 }
 
-// ---- Provider switching ----
 pub async fn select_provider(
     state: &mut AppState,
     ui: &TerminalUi,
@@ -146,25 +145,28 @@ pub async fn select_provider(
 }
 
 // ---- Sessions and history ----
-pub fn new_session(state: &mut AppState) -> Result<String> {
-    state.start_new_session()?;
+pub async fn new_session(state: &mut AppState) -> Result<String> {
+    state.start_new_session().await?;
     Ok(format!("Started a new session ({}).", state.session.id))
 }
 
-pub fn undo_last_turn(state: &mut AppState) -> Result<String> {
+pub async fn undo_last_turn(state: &mut AppState) -> Result<String> {
     if state.session.history.is_empty() {
-        return Ok("Nothing to undo — conversation history is empty.".to_string());
+        return Ok(
+            "Nothing to undo — conversation history is empty.".to_string()
+        );
     }
-    state.undo_last_turn()?;
+    state.undo_last_turn().await?;
+
     Ok("Removed last user message and model response.".to_string())
 }
 
-pub fn clear_history(state: &mut AppState) -> Result<String> {
-    state.clear_current_session()?;
+pub async fn clear_history(state: &mut AppState) -> Result<String> {
+    state.clear_current_session().await?;
     Ok("Conversation history cleared.".to_string())
 }
 
-pub fn manage_sessions(
+pub async fn manage_sessions(
     state: &mut AppState,
     ui: &TerminalUi,
 ) -> Result<String> {
@@ -246,7 +248,7 @@ pub fn manage_sessions(
             ))
         }
         1 => {
-            state.delete_session_by_id(&chosen.id)?;
+            state.delete_session_by_id(&chosen.id).await?;
 
             Ok(format!(
                 "Deleted session '{}'.",

@@ -1,8 +1,8 @@
 use std::path::Path;
+use std::time::Duration;
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection};
 use rig::message::Message;
-
 use crate::dto::{CallRecord, ChatSession, SessionSummary};
 
 pub struct SqliteStore {
@@ -12,11 +12,22 @@ pub struct SqliteStore {
 impl SqliteStore {
     pub fn open(data_dir: &Path, db_name: &str) -> Result<Self> {
         let db_path = data_dir.join(db_name);
+    
         let db = Connection::open(&db_path)
-            .with_context(|| format!("Failed to open SQLite database at {:?}", db_path))?;
-
+            .with_context(|| {
+                format!("Failed to open SQLite database at {:?}", db_path)
+            })?;
+    
+        db.busy_timeout(Duration::from_secs(5))?;
+    
+        db.execute_batch(
+            "PRAGMA journal_mode = WAL;
+             PRAGMA foreign_keys = ON;"
+        )?;
+    
         let store = Self { db };
         store.init_schema()?;
+    
         Ok(store)
     }
 

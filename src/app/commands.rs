@@ -39,10 +39,10 @@ pub async fn execute_command(
             "/provider"     | "/pr"     => select_provider(state, ui).await?,
             
             // ---- Sessions and history ----
-            "/new"          | "/n"      => new_session(state)?,
-            "/sessions"     | "/ss"     => manage_sessions(state, ui)?,
-            "/undo"         | "/u"      => undo_last_turn(state)?,
-            "/clear"        | "/cl"     => clear_history(state)?,
+            "/new"          | "/n"      => new_session(state).await?,
+            "/sessions"     | "/ss"     => manage_sessions(state, ui).await?,
+            "/undo"         | "/u"      => undo_last_turn(state).await?,
+            "/clear"        | "/cl"     => clear_history(state).await?,
 
             // ---- Models ----
             "/models"       | "/mls"    => show_models(state, ui),
