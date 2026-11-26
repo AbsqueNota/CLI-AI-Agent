@@ -1,3 +1,4 @@
+
 use std::{
     collections::{HashMap, HashSet},
     io::{self, Write},
@@ -34,6 +35,7 @@ pub enum UiEvent {
     Finished {
         agent_id: AgentId,
         elapsed: f64,
+        ack: Option<tokio::sync::oneshot::Sender<()>>,
     },
     Failed {
         agent_id: AgentId,
@@ -42,84 +44,19 @@ pub enum UiEvent {
     Shutdown,
 }
 
-#[derive(Debug, Default)]
-pub struct AgentBuffer {
-    pub model_id: String,
-    pub reasoning: String,
-    pub output: String,
-    pub finished: bool,
-    pub elapsed: Option<f64>,
-    pub error: Option<String>,
-
-    is_printed_reasoning: bool,
-    is_printed_text: bool,
+#[derive(Default)]
+struct AgentOutputState {
+    model_id: String,
+    has_reasoning: bool,
+    has_answer: bool,
 }
 
 #[derive(Default)]
-pub struct UiState {
-    pub agents: HashMap<AgentId, AgentBuffer>,
+struct UiState {
+    agents: HashMap<AgentId, AgentOutputState>,
 }
 
 impl UiState {
-    pub fn handle(&mut self, event: &UiEvent) {
-        match event {
-            UiEvent::Started {
-                agent_id,
-                model_id,
-            } => {
-                self.agents.insert(
-                    agent_id.clone(),
-                    AgentBuffer {
-                        model_id: model_id.clone(),
-                        ..Default::default()
-                    },
-                );
-            }
-
-            UiEvent::Reasoning {
-                agent_id,
-                text,
-            } => {
-                if let Some(agent) = self.agents.get_mut(agent_id) {
-                    agent.reasoning.push_str(text);
-                    agent.is_printed_reasoning = true;
-                }
-            }
-
-            UiEvent::Chunk {
-                agent_id,
-                text,
-            } => {
-                if let Some(agent) = self.agents.get_mut(agent_id) {
-                    agent.output.push_str(text);
-                    agent.is_printed_text = true;
-                }
-            }
-
-            UiEvent::Finished {
-                agent_id,
-                elapsed,
-            } => {
-                if let Some(agent) = self.agents.get_mut(agent_id) {
-                    agent.finished = true;
-                    agent.elapsed = Some(*elapsed);
-                }
-            }
-
-            UiEvent::Failed {
-                agent_id,
-                error,
-            } => {
-                if let Some(agent) = self.agents.get_mut(agent_id) {
-                    agent.error = Some(error.clone());
-                    agent.finished = true;
-                }
-            }
-
-            UiEvent::Shutdown => {}
-        }
-    }
-
     async fn run(
         &mut self,
         mut rx: mpsc::Receiver<UiEvent>,
@@ -127,150 +64,192 @@ impl UiState {
     ) {
         let mut active_agents = HashSet::<AgentId>::new();
         let mut spinner: Option<ProgressBar> = None;
-        let mut output_started = false;
+        let mut content_started = false;
 
         while let Some(event) = rx.recv().await {
-            match &event {
+            match event {
                 UiEvent::Started {
                     agent_id,
                     model_id,
                 } => {
                     if active_agents.is_empty() {
-                        output_started = false;
+                        content_started = false;
 
                         spinner = Some(build_spinner(
                             &theme,
-                            model_id,
+                            &model_id,
                         ));
                     }
 
                     active_agents.insert(agent_id.clone());
+
+                    self.agents.insert(
+                        agent_id,
+                        AgentOutputState {
+                            model_id,
+                            ..Default::default()
+                        },
+                    );
                 }
 
                 UiEvent::Reasoning {
                     agent_id,
                     text,
                 } => {
-                    if !output_started {
+                    if !content_started {
                         if let Some(pb) = spinner.take() {
                             pb.finish_and_clear();
                         }
 
-                        output_started = true;
+                        content_started = true;
                     }
 
-                    if let Some(agent) = self.agents.get(agent_id) {
-                        let id = short_agent_id(agent_id);
+                    let (model_id, first_reasoning) = {
+                        let state = self
+                            .agents
+                            .entry(agent_id.clone())
+                            .or_default();
 
+                        let first = !state.has_reasoning;
+                        state.has_reasoning = true;
+                        (state.model_id.clone(), first)
+                    };
+
+                    if first_reasoning {
                         print!(
-                            "[{id}:thinking] {}",
-                            text.color(theme.palette.model.thinking)
+                            "{}{}{} {}{}\n",
+                            "[".color(theme.palette.muted),
+                            model_id.color(theme.palette.main).bold(),
+                            "]".color(theme.palette.muted),
+                            "think".color(theme.palette.muted),
+                            ":".color(theme.palette.muted),
                         );
-
-                        io::stdout().flush().ok();
-
-                        let _ = agent;
                     }
+
+                    print!(
+                        "{}",
+                        text.color(theme.palette.muted)
+                    );
+
+                    let _ = io::stdout().flush();
                 }
 
                 UiEvent::Chunk {
                     agent_id,
                     text,
                 } => {
-                    if !output_started {
+                    if !content_started {
                         if let Some(pb) = spinner.take() {
                             pb.finish_and_clear();
                         }
-                
-                        output_started = true;
+
+                        content_started = true;
                     }
-                
-                    let needs_new_line = self
-                        .agents
-                        .get(agent_id)
-                        .is_some_and(|agent| {
-                            agent.is_printed_reasoning
-                                && !agent.is_printed_text
-                        });
-                
+
+                    let (model_id, first_answer, needs_new_line) = {
+                        let state = self
+                            .agents
+                            .entry(agent_id.clone())
+                            .or_default();
+
+                        let first = !state.has_answer;
+                        let needs_new_line =
+                            state.has_reasoning && first;
+
+                        state.has_answer = true;
+
+                        (
+                            state.model_id.clone(),
+                            first,
+                            needs_new_line,
+                        )
+                    };
+
                     if needs_new_line {
-                        println!("\n");
+                        println!();
                     }
-                
-                    let id = short_agent_id(agent_id);
-                
+
+                    if first_answer {
+                        print!(
+                            "{}{}{} {}{}\n",
+                            "[".color(theme.palette.muted),
+                            model_id.color(theme.palette.main).bold(),
+                            "]".color(theme.palette.muted),
+                            "answer".color(theme.palette.muted),
+                            ":".color(theme.palette.muted),
+                        );
+                    }
+
                     print!(
-                        "[{id}:answer] {}",
-                        text.color(theme.palette.model.answer)
+                        "{}",
+                        text.color(theme.palette.default)
                     );
-                
-                    io::stdout().flush().ok();
+
+                    let _ = io::stdout().flush();
                 }
 
                 UiEvent::Finished {
                     agent_id,
                     elapsed,
+                    ack,
                 } => {
-                    if let Some(pb) = spinner.take() {
-                        if active_agents.len() <= 1 {
-                            pb.finish_and_clear();
-                        } else {
-                            // Другие агенты ещё работают.
-                            spinner = Some(pb);
-                        }
-                    }
+                    let model_id = self.agents
+                        .get(&agent_id)
+                        .map(|state| state.model_id.as_str())
+                        .unwrap_or_else(|| agent_id.as_str());
 
                     println!(
-                        "\nFinished [{}] in {:.2}s",
-                        short_agent_id(agent_id),
-                        elapsed,
+                        "\n{} {}{}{} {} {}\n",
+                        "Finished".color(theme.palette.info),
+                        "[".color(theme.palette.info),
+                        model_id.color(theme.palette.main).bold(),
+                        "]".color(theme.palette.info),
+                        "in".color(theme.palette.info),
+                        format!("{elapsed:.2}s").color(theme.palette.info),
                     );
 
-                    active_agents.remove(agent_id);
+                    active_agents.remove(&agent_id);
+                    self.agents.remove(&agent_id);
+
+                    if let Some(ack) = ack {
+                        let _ = ack.send(());
+                    }
                 }
 
                 UiEvent::Failed {
                     agent_id,
                     error,
                 } => {
-                    if let Some(pb) = spinner.take() {
-                        if active_agents.len() <= 1 {
-                            pb.finish_and_clear();
-                        } else {
-                            spinner = Some(pb);
-                        }
-                    }
+                    let model_id = self.agents
+                        .get(&agent_id)
+                        .map(|state| state.model_id.as_str())
+                        .unwrap_or_else(|| agent_id.as_str());
 
                     eprintln!(
                         "\n{}",
                         format!(
                             "[{}] {}",
-                            short_agent_id(agent_id),
+                            model_id,
                             error,
                         )
                         .color(AppTheme::error_color())
                     );
 
-                    active_agents.remove(agent_id);
+                    active_agents.remove(&agent_id);
+                    self.agents.remove(&agent_id);
                 }
 
                 UiEvent::Shutdown => {
-                    if let Some(pb) = spinner.take() {
-                        pb.finish_and_clear();
-                    }
-
                     break;
                 }
             }
-
-            self.handle(&event);
 
             if active_agents.is_empty() {
                 if let Some(pb) = spinner.take() {
                     pb.finish_and_clear();
                 }
 
-                output_started = false;
+                content_started = false;
             }
         }
 
@@ -317,10 +296,7 @@ impl UiActor {
 
     pub async fn shutdown(&mut self) -> anyhow::Result<()> {
         if let Some(task) = self.task.take() {
-            // Если receiver уже завершился, отправлять Shutdown
-            // больше не требуется.
             let _ = self.tx.send(UiEvent::Shutdown).await;
-
             task.await?;
         }
 
@@ -334,21 +310,17 @@ impl Default for UiActor {
     }
 }
 
-fn short_agent_id(agent_id: &str) -> &str {
-    &agent_id[..agent_id.len().min(8)]
-}
-
 fn build_spinner(
     theme: &AppTheme,
     model_id: &str,
 ) -> ProgressBar {
     let message = format!(
         "\n🤖: {} {}",
-        model_id.color(theme.palette.model.answer),
-        "is thinking".color(theme.palette.spinner.message),
+        model_id.color(theme.palette.main),
+        "is thinking".color(theme.palette.muted),
     );
 
-    let indicator_color = theme.palette.spinner.indicator;
+    let indicator_color = theme.palette.muted;
 
     let ticks = [
         "".to_string(),

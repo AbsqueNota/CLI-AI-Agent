@@ -34,7 +34,8 @@ pub fn select_initial_provider(
         .collect();
 
     let exit_index = items.len();
-    items.push("Exit application".to_string());
+    
+    items.push(ui.labels().quit.clone());
 
     let mut default_index = providers
         .iter()
@@ -260,23 +261,38 @@ pub async fn manage_sessions(
 }
 
 // ---- Models ----
-pub fn show_models(state: &AppState, ui: &TerminalUi,) -> String{
+pub fn show_models(state: &AppState, ui: &TerminalUi) -> String {
     let labels = &ui.labels();
-    let active_label = labels.active.clone();
+    let active_label = &labels.active;
+    let mut models: Vec<_> = 
+        state.registry.by_provider(state.provider.id());
+    models.sort_by_cached_key(|m| m.id.to_string().to_lowercase());
+    let max_width = models
+        .iter()
+        .map(|m| m.id.to_string().chars().count())
+        .max()
+        .unwrap_or(0);
 
-    let mut result = String::from("\nAvailable models:\n");
-    for model in state.registry.by_provider(state.provider.id()) {
+    let mut result = String::from("Available models:\n");
+    for model in models {
+        let id_str = model.id.to_string();
         let active = if model.id == state.current_model.id {
-            format!(" {active_label}") } else { String::new() };
-        result.push_str(
-            &format!( "\n- {}{} {}",
-            model.id.to_string(),
+            active_label.as_str()
+        } else {
+            ""
+        };
+
+        result.push_str(&format!(
+            "\n- {:<width$} {}{}",
+            id_str,
             labels.get_cloud_label(model.is_cloud),
-            active
+            active,
+            width = max_width,
         ));
     }
     result
 }
+
 
 pub async fn select_model(
     state: &mut AppState,
@@ -819,10 +835,10 @@ pub fn prepare_report(calls: Vec<String>) -> String {
     if calls.is_empty()  { 
         return format!("No statistics available."); 
     }
-    let body = calls.join("\n\n");
+    let body = calls.join("\n");
     let top_line    = "=========== CALLS STATS ===========";
     let bottom_line = "===================================";
-    format!("{top_line}\n\n{body}\n{bottom_line}\n") 
+    format!("{top_line}\n\n{body}\n{bottom_line}") 
 }
 
 pub fn help() -> String {

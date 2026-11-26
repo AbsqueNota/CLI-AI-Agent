@@ -33,6 +33,8 @@ async fn main() -> Result<()> {
         AppTheme::from_preset(config.theme)
     );
 
+    ui.welcome_title();
+
     let provider = 
         match select_initial_provider(&config.provider, &ui)? {
             InitialProviderSelection::Selected(provider) => provider,

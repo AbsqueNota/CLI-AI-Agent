@@ -3,9 +3,10 @@ use std::sync::Arc;
 use tokio::{
     sync::{mpsc, oneshot},
 };
+use rig::agent::Agent;
 use anyhow::Result;
 use crate::{
-    agent::{AgentFactory, AgentWrapper},
+    agent::AgentFactory,
     dto::{CallRecord, CallsStats, ChatSession, SavedModelProfile}, 
     models::{Model, ModelRegistry,}, 
     provider::{LlmProvider, ProviderFactory}, 
@@ -21,7 +22,7 @@ pub struct AppState {
     pub provider:      Arc<dyn LlmProvider>,
     pub registry:      ModelRegistry,
     pub current_model: Model,
-    pub agent:         AgentWrapper,
+    pub agent:         Agent,
     pub session:       ChatSession,
     pub stats:         CallsStats,
     session_worker:    Option<WatchWorker<ChatSession>>,
@@ -42,8 +43,7 @@ impl AppState {
         let mut registry = ModelRegistry::load(&*provider)
             .await
             .map_err(anyhow::Error::msg)?;
-    
-        // Restore only profiles belonging to the active provider.
+
         if let Some(provider_config) = config.providers.get(&provider_id) {
             for model in registry.get_all_models_mut() {
                 if let Some(profile) = provider_config.models.get(&model.id) {
@@ -52,7 +52,6 @@ impl AppState {
             }
         }
     
-        // Restore the last selected model for this provider.
         let selected = config
             .providers
             .get(&provider_id)

@@ -1,5 +1,5 @@
 use std::time::Instant;
-
+use uuid::Uuid;
 use anyhow::{Context, Result};
 use tokio_stream::StreamExt;
 
@@ -30,14 +30,14 @@ pub async fn run_stream(
 
     let start = Instant::now();
 
-    let agent = state.agent.clone();
+    let agent_id = Uuid::now_v7().to_string();
     let model_id = state.current_model.id.clone();
 
     let ui_tx = ui.event_sender();
 
     ui_tx
         .send(UiEvent::Started {
-            agent_id: agent.id.clone(),
+            agent_id: agent_id.clone(),
             model_id: model_id.clone(),
         })
         .await
@@ -55,13 +55,13 @@ pub async fn run_stream(
         .as_ref()
         .is_some_and(|settings| settings.is_visible);
 
-    let mut stream = agent
-        .inner
+    let mut stream = state.agent
         .prompt(prompt)
         .history(state.session.history.clone())
         .stream();
 
     let mut completed = false;
+    let mut stream_error = None;
 
     while let Some(item) = stream.next().await {
         match item {
@@ -71,7 +71,7 @@ pub async fn run_stream(
                 if can_think && show_thinking {
                     ui_tx
                         .send(UiEvent::Reasoning {
-                            agent_id: agent.id.clone(),
+                            agent_id: agent_id.clone(),
                             text,
                         })
                         .await
@@ -84,7 +84,7 @@ pub async fn run_stream(
             )) => {
                 ui_tx
                     .send(UiEvent::Chunk {
-                        agent_id: agent.id.clone(),
+                        agent_id: agent_id.clone(),
                         text,
                     })
                     .await
@@ -113,27 +113,12 @@ pub async fn run_stream(
 
                 state.persist_session();
 
-                ui_tx
-                    .send(UiEvent::Finished {
-                        agent_id: agent.id.clone(),
-                        elapsed: start.elapsed().as_secs_f64(),
-                    })
-                    .await
-                    .context("Failed to send UI Finished event")?;
-
                 completed = true;
                 break;
             }
 
             Err(error) => {
-                ui_tx
-                    .send(UiEvent::Failed {
-                        agent_id: agent.id.clone(),
-                        error: format!("{model_id}: {error}"),
-                    })
-                    .await
-                    .context("Failed to send UI Failed event")?;
-
+                stream_error = Some(format!("{model_id}: {error}"));
                 break;
             }
 
@@ -143,17 +128,44 @@ pub async fn run_stream(
 
     drop(stream);
 
-    if !completed {
-        ui_tx
+    if let Some(error) = stream_error {
+        let _ = ui_tx
             .send(UiEvent::Failed {
-                agent_id: agent.id,
-                error: format!(
-                    "{model_id}: stream ended without FinalResponse"
-                ),
+                agent_id,
+                error: error.to_string(),
             })
-            .await
-            .context("Failed to send UI Failed event")?;
+            .await;
+
+        return Err(anyhow::anyhow!(error));
     }
 
+    if !completed {
+        let error = anyhow::anyhow!(
+            "{model_id}: stream ended without FinalResponse"
+        );
+
+        let _ = ui_tx
+            .send(UiEvent::Failed {
+                agent_id,
+                error: error.to_string(),
+            })
+            .await;
+
+        return Err(error);
+    }
+    let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
+    ui_tx
+        .send(UiEvent::Finished {
+            agent_id,
+            elapsed: start.elapsed().as_secs_f64(),
+            ack: Some(ack_tx),
+        })
+        .await
+        .context("Failed to send UI Finished event")?;
+
+    ack_rx
+        .await
+        .context("UI actor stopped before processing Finished event")?;
+    
     Ok(())
 }

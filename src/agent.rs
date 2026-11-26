@@ -1,7 +1,6 @@
 pub mod runtime;
 
 use anyhow::Result;
-use uuid::Uuid;
 use rig::agent::{Agent, AgentBuilder};
 use crate::{
     models::{
@@ -10,28 +9,13 @@ use crate::{
     provider::LlmProvider,
 };
 
-#[derive(Clone)]
-pub struct AgentWrapper {
-    pub id: String,
-    pub inner: Agent,
-}
-
-impl AgentWrapper{
-    pub fn new(inner: Agent)  -> Self {
-        Self {
-            id: Uuid::new_v4().to_string(),
-            inner,
-        }
-    }
-}
-
 pub struct AgentFactory;
 
 impl AgentFactory {
     pub fn build(
         provider: &dyn LlmProvider,
         model: &Model,
-    ) -> Result<AgentWrapper> {
+    ) -> Result<Agent> {
         let dyn_model = provider.native_completion(&model.id)?;
         let mut builder = AgentBuilder::new(dyn_model)
             .name(&model.name)
@@ -52,6 +36,6 @@ impl AgentFactory {
         set_opt!(builder, settings.seed,        seed);
         set_opt!(builder, &settings.stop,       stop);
         set_opt!(builder, provider.to_additional_params(model), additional_params);
-        Ok(AgentWrapper::new(builder.build()))
+        Ok(builder.build())
     }
 }

@@ -9,10 +9,11 @@ use crate::{
 };
 
 pub async fn chat_loop(ctx: &mut AppContext) -> Result<()> {
-    ctx.ui.welcome_title();
+    ctx.ui.welcome_hint();
     ctx.ui.start_output();
+    
     loop {
-        ctx.ui.model_prompt(&ctx.state.current_model.id);
+        ctx.ui.selected_model(&ctx.state.current_model.id);
 
         let raw = ctx.ui.input("You",false)?;
         let input = raw.trim();

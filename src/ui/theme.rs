@@ -51,8 +51,6 @@ impl fmt::Debug for AppTheme {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AppTheme")
             .field("palette", &self.palette)
-            .field("select_theme", &"ColorfulTheme(..)")
-            .field("input_theme", &"ColorfulTheme(..)")
             .finish()
     }
 }
@@ -62,17 +60,17 @@ fn build_select_theme(palette: &Palette) -> ColorfulTheme {
 
     theme.prompt_prefix = style("✦".to_string())
         .for_stderr()
-        .fg(to_console_color(palette.select.prompt))
+        .fg(to_console_color(palette.main))
         .bold();
 
     theme.prompt_style = Style::new()
         .for_stderr()
-        .fg(to_console_color(palette.select.prompt))
+        .fg(to_console_color(palette.main))
         .bold();
 
     theme.active_item_prefix = style("▸".to_string())
         .for_stderr()
-        .fg(to_console_color(palette.select.active))
+        .fg(to_console_color(palette.main))
         .bold();
 
     theme.inactive_item_prefix = style(" ".to_string())
@@ -80,16 +78,16 @@ fn build_select_theme(palette: &Palette) -> ColorfulTheme {
 
     theme.active_item_style = Style::new()
         .for_stderr()
-        .fg(to_console_color(palette.select.active))
+        .fg(to_console_color(palette.main))
         .bold();
 
     theme.inactive_item_style = Style::new()
         .for_stderr()
-        .fg(to_console_color(palette.select.inactive));
+        .fg(to_console_color(palette.muted));
 
     theme.values_style = Style::new()
         .for_stderr()
-        .fg(to_console_color(palette.select.value))
+        .fg(to_console_color(palette.default))
         .bold();
 
     theme
@@ -100,12 +98,12 @@ fn build_input_theme(palette: &Palette) -> ColorfulTheme {
 
     theme.prompt_prefix = style("✦".to_string())
         .for_stderr()
-        .fg(to_console_color(palette.input.prompt))
+        .fg(to_console_color(palette.main))
         .bold();
 
     theme.prompt_style = Style::new()
         .for_stderr()
-        .fg(to_console_color(palette.input.prompt))
+        .fg(to_console_color(palette.main))
         .bold();
 
     theme

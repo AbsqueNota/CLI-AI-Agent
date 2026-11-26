@@ -54,27 +54,29 @@ impl TerminalUi {
         println!(
             "\n{}",
             "✦ Local AI Assistant ✦"
-                .color(self.theme.palette.welcome.title)
+                .color(self.theme.palette.main)
                 .bold()
         );
     }
 
     pub fn welcome_hint(&self) {
         println!(
-            "{} {} {}\n",
-            "Type".color(self.theme.palette.welcome.hint),
-            "/help".color(self.theme.palette.welcome.title).bold(),
-            "for commands.".color(self.theme.palette.welcome.hint)
+            "\n{} {} {} {} {}\n",
+            "Type".color(self.theme.palette.hint),
+            "/help".color(self.theme.palette.main).bold(),
+            "or".color(self.theme.palette.hint),
+            "/h".color(self.theme.palette.main).bold(),
+            "for commands.".color(self.theme.palette.hint)
         );
     }
 
     // ---- Model ----
 
-    pub fn model_prompt(&self, model_id: &str) {
+    pub fn selected_model(&self, model_id: &str) {
         println!(
-            "{} {}",
+            "{}{}",
             "🤖:",
-            model_id.color(self.theme.palette.input.prompt)
+            model_id.color(self.theme.palette.main)
         );
     }
 
@@ -146,10 +148,14 @@ impl TerminalUi {
 
     // ---- Status messages ----
 
+    pub fn new_line(&self){
+        println!();
+    }
+
     pub fn goodbye(&self) {
         println!(
-            "👋 {}",
-            "Goodbye!".color(self.theme.palette.welcome.title)
+            "\n👋 {}\n",
+            "Goodbye!".color(self.theme.palette.info)
         );
     }
 

@@ -7,6 +7,7 @@ pub struct MenuLabels {
     pub apply:          String,  
     pub save_and_apply: String,
     pub back:           String,
+    pub quit:           String,
 
     pub active:         String,
     pub cloud:          String,
@@ -37,6 +38,7 @@ impl Default for MenuLabels {
             apply:          "< Apply >".to_string(),
             save_and_apply: "< Save & Apply >".to_string(),
             back:           "< Back >".to_string(),
+            quit:           "< Exit >".to_string(),
             // label
             active:         "[active]".to_string(),
             cloud:          "[cloud]".to_string(),
