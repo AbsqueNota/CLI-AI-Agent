@@ -10,7 +10,7 @@ use crate::{
 
 pub async fn chat_loop(ctx: &mut AppContext) -> Result<()> {
     ctx.ui.welcome_title();
-   
+    ctx.ui.start_output();
     loop {
         ctx.ui.model_prompt(&ctx.state.current_model.id);
 
@@ -37,6 +37,6 @@ pub async fn chat_loop(ctx: &mut AppContext) -> Result<()> {
             TerminalUi::error(&format!("Agent error: {error}"));
         }
     }
-
+    ctx.ui.shutdown_output().await?;
     Ok(())
 }

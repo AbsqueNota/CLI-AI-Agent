@@ -28,7 +28,10 @@ impl AgentWrapper{
 pub struct AgentFactory;
 
 impl AgentFactory {
-    pub fn build(provider: &Box<dyn LlmProvider>, model: &Model) -> Result<AgentWrapper> {
+    pub fn build(
+        provider: &dyn LlmProvider,
+        model: &Model,
+    ) -> Result<AgentWrapper> {
         let dyn_model = provider.native_completion(&model.id)?;
         let mut builder = AgentBuilder::new(dyn_model)
             .name(&model.name)

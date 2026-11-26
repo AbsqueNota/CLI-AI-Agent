@@ -1,4 +1,5 @@
 use std::time::Duration;
+use std::sync::Arc;
 use tokio::{
     sync::{mpsc, oneshot},
 };
@@ -17,13 +18,13 @@ use crate::{
 pub struct AppState {
     pub storage:       StorageManager,
     pub config:        AppConfig,
-    pub provider:      Box<dyn LlmProvider>,
+    pub provider:      Arc<dyn LlmProvider>,
     pub registry:      ModelRegistry,
     pub current_model: Model,
     pub agent:         AgentWrapper,
     pub session:       ChatSession,
     pub stats:         CallsStats,
-    session_worker: Option<WatchWorker<ChatSession>>,
+    session_worker:    Option<WatchWorker<ChatSession>>,
 }
 
 impl AppState {
@@ -32,11 +33,13 @@ impl AppState {
         mut config: AppConfig,
         storage: StorageManager,
     ) -> Result<Self> {
+        let provider: Arc<dyn LlmProvider> = Arc::from(provider);
+
         let provider_id = provider.id().to_lowercase();
     
         config.provider = provider_id.clone();
     
-        let mut registry = ModelRegistry::load(&provider)
+        let mut registry = ModelRegistry::load(&*provider)
             .await
             .map_err(anyhow::Error::msg)?;
     
@@ -62,7 +65,7 @@ impl AppState {
         let session = storage.load_latest_or_create_session()?;
         let stats_records = storage.load_session_stats(&session.id)?;
     
-        let agent = AgentFactory::build(&provider, &selected)?;
+        let agent = AgentFactory::build(&*provider, &selected)?;
         
         let db_tx = storage.db_sender();
         let session_worker = Some(Self::create_session_worker(db_tx));
@@ -173,7 +176,7 @@ impl AppState {
     
         let new_provider = ProviderFactory::create(&provider_name)?;
     
-        let mut new_registry = ModelRegistry::load(&new_provider)
+        let mut new_registry = ModelRegistry::load(&*new_provider)
             .await
             .map_err(anyhow::Error::msg)?;
     
@@ -203,7 +206,7 @@ impl AppState {
             ))?;
     
         let new_agent = AgentFactory::build(
-            &new_provider,
+            &*new_provider,
             &selected_model,
         )?;
     
@@ -215,7 +218,7 @@ impl AppState {
             &selected_model,
         );
         self.storage.save_config(&new_config)?;
-        self.provider = new_provider;
+        self.provider = Arc::from(new_provider);
         self.registry = new_registry;
         self.current_model = selected_model;
         self.agent = new_agent;
@@ -255,7 +258,7 @@ impl AppState {
         }
 
         let agent = AgentFactory::build(
-            &self.provider,
+            &*self.provider,
             &self.current_model,
         )?;
         self.agent = agent;
@@ -284,7 +287,7 @@ impl AppState {
         }
     
         let new_agent = AgentFactory::build(
-            &self.provider,
+            &*self.provider,
             &next_model,
         )?;
     

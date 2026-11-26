@@ -2,19 +2,19 @@ pub mod theme;
 pub mod labels;
 pub mod mpsc_ui;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use colored::Colorize;
 use dialoguer::{
     theme::Theme,
     Confirm, Input, Select,
 };
-use indicatif::{ProgressBar, ProgressStyle};
+
 use std::{
     fmt::Display,
     io::{self, Write},
     sync::Arc,
-    time::Duration,
 };
+use tokio::sync::mpsc;
 
 use crate::{
     ui::{
@@ -22,14 +22,17 @@ use crate::{
         theme::{
             AppTheme,
         },
+        mpsc_ui::{
+            UiActor,
+            UiEvent,
+        }
     },
 };
 
 pub struct TerminalUi {
     theme: Arc<AppTheme>,
     menu_labels: MenuLabels,
-    is_printed_reasoning: bool,
-    is_printed_text: bool,
+    mpsc_ui: UiActor,
 }
 
 impl TerminalUi {
@@ -37,18 +40,12 @@ impl TerminalUi {
         Self {
             theme: Arc::new(theme),
             menu_labels: MenuLabels::default(),
-            is_printed_reasoning: false,
-            is_printed_text: false,
+            mpsc_ui: UiActor::new(),
         }
     }
 
     pub fn set_theme(&mut self, theme: AppTheme) {
         self.theme = Arc::new(theme);
-    }
-
-    fn init_printed_flag_stream(&mut self) {
-        self.is_printed_reasoning = false;
-        self.is_printed_text = false;
     }
 
     // ---- Welcome ----
@@ -177,85 +174,18 @@ impl TerminalUi {
         );
     }
 
-    // ---- Spinner ----
+    // ---- MPSC UI ----
 
-    pub fn build_spinner(&self, model_id: &str) -> Result<ProgressBar> {
-        let message_color = self.theme.palette.spinner.message;
-        let indicator_color = self.theme.palette.spinner.indicator;
-
-        let model = model_id.color(self.theme.palette.model.answer);
-
-        let message = format!(
-            "\n🤖: {model} {}",
-            "is thinking".color(message_color)
-        );
-
-        let spinner = [
-            "".to_string(),
-            ".".color(indicator_color).to_string(),
-            "..".color(indicator_color).to_string(),
-            "...".color(indicator_color).to_string(),
-            "".to_string(),
-        ];
-
-        let pb = ProgressBar::new_spinner();
-
-        pb.set_style(
-            ProgressStyle::default_spinner()
-                .tick_strings(
-                    &spinner.each_ref().map(|s| s.as_str()),
-                )
-                .template("{msg}{spinner}")
-                .context("Invalid spinner template")?,
-        );
-
-        pb.set_message(message);
-        pb.enable_steady_tick(Duration::from_millis(150));
-
-        io::stdout().flush()?;
-
-        Ok(pb)
+    pub fn start_output(&mut self) {
+        self.mpsc_ui.start((*self.theme).clone());
     }
 
-    // ---- Model output ----
-
-    pub fn write_text(&mut self, text: &str) -> Result<()> {
-        if self.is_printed_reasoning && !self.is_printed_text {
-            println!("\n");
-        }
-
-        print!("{}", text.color(self.theme.palette.model.answer));
-        io::stdout().flush()?;
-
-        self.is_printed_text = true;
-
-        Ok(())
+    pub fn event_sender(&self) -> mpsc::Sender<UiEvent> {
+        self.mpsc_ui.sender()
     }
 
-    pub fn write_reasoning(&mut self, text: &str) -> Result<()> {
-        print!("{}", text.color(self.theme.palette.model.thinking));
-        io::stdout().flush()?;
-
-        self.is_printed_reasoning = true;
-
-        Ok(())
-    }
-
-    pub fn stream_finished(&mut self, elapsed_seconds: f64) {
-        self.init_printed_flag_stream();
-
-        println!("\nFinished in {elapsed_seconds:.2}s");
-    }
-
-    pub fn stream_error(
-        model_id: &str,
-        error: &impl std::fmt::Display,
-    ) {
-        eprintln!(
-            "\n{}",
-            format!("{model_id} error: {error}")
-                .color(AppTheme::error_color())
-        );
+    pub async fn shutdown_output(&mut self) -> Result<()> {
+        self.mpsc_ui.shutdown().await
     }
 
     // ---- Accessors ----

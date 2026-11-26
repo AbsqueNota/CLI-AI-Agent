@@ -7,7 +7,9 @@ pub struct ModelRegistry {
 }
 
 impl ModelRegistry {
-    pub async fn load(provider: &Box<dyn LlmProvider>) -> Result<Self, String> {
+    pub async fn load(
+        provider: &dyn LlmProvider,
+    ) -> Result<Self, String> {
         let models = provider
             .list_models()
             .await
