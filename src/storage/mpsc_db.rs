@@ -1,14 +1,10 @@
-
 use std::{
     path::PathBuf,
     thread::{self, JoinHandle},
 };
-
 use anyhow::{Context, Result, anyhow};
 use tokio::sync::{mpsc, oneshot};
-
 use crate::dto::{CallRecord, ChatSession};
-
 use super::sqlite::SqliteStore;
 
 const CHANNEL_CAPACITY: usize = 128;
@@ -45,13 +41,13 @@ pub (crate) enum DbCommand {
 
 
 pub struct DbActor {
-    tx: mpsc::UnboundedSender<DbCommand>,
+    tx: mpsc::Sender<DbCommand>,
     thread: Option<JoinHandle<()>>,
 }
 
 impl DbActor {
     pub fn spawn(data_dir: PathBuf, db_name: String) -> Result<Self> {
-        let (tx, mut rx) = mpsc::unbounded_channel::<DbCommand>();
+        let (tx, mut rx) = mpsc::channel::<DbCommand>(CHANNEL_CAPACITY);
         let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
 
         let handle = thread::Builder::new()
@@ -135,7 +131,7 @@ impl DbActor {
         })
     }
 
-    pub(crate) fn sender(&self) -> mpsc::UnboundedSender<DbCommand> {
+    pub(crate) fn sender(&self) -> mpsc::Sender<DbCommand> {
         self.tx.clone()
     }
 
@@ -147,6 +143,7 @@ impl DbActor {
 
         self.tx
             .send(build(reply_tx))
+            .await
             .context("SQLite writer channel is closed")?;
 
         reply_rx
@@ -186,6 +183,7 @@ impl DbActor {
                 session_id,
                 reply: reply_tx,
             })
+            .await
             .context("SQLite writer channel is closed")?;
 
         reply_rx
@@ -204,6 +202,7 @@ impl DbActor {
 
         self.tx
             .send(DbCommand::Shutdown { reply: reply_tx })
+            .await
             .context("SQLite writer channel is closed")?;
 
         reply_rx

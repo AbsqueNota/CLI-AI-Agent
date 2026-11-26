@@ -3,11 +3,8 @@ use tokio::{
     sync::{mpsc, oneshot},
 };
 use anyhow::Result;
-use rig::{
-    agent::Agent,
-};
 use crate::{
-    agent::AgentFactory, 
+    agent::{AgentFactory, AgentWrapper},
     dto::{CallRecord, CallsStats, ChatSession, SavedModelProfile}, 
     models::{Model, ModelRegistry,}, 
     provider::{LlmProvider, ProviderFactory}, 
@@ -23,7 +20,7 @@ pub struct AppState {
     pub provider:      Box<dyn LlmProvider>,
     pub registry:      ModelRegistry,
     pub current_model: Model,
-    pub agent:         Agent,
+    pub agent:         AgentWrapper,
     pub session:       ChatSession,
     pub stats:         CallsStats,
     session_worker: Option<WatchWorker<ChatSession>>,
@@ -84,7 +81,7 @@ impl AppState {
     
     // ---- Session Worker ----
     fn create_session_worker(
-        db_tx: mpsc::UnboundedSender<DbCommand>,
+        db_tx: mpsc::Sender<DbCommand>,
     ) -> WatchWorker<ChatSession> {
         WatchWorker::spawn_with_debounce(
             Duration::from_millis(100),
@@ -94,16 +91,18 @@ impl AppState {
                 async move {
                     let (reply_tx, reply_rx) = oneshot::channel();
     
-                    if db_tx
-                        .send(DbCommand::SaveSession {
-                            session,
-                            reply: reply_tx,
-                        })
-                        .is_err()
-                    {
-                        eprintln!("[session-persist] Database actor is unavailable");
-                        return;
-                    }
+                    if let Err(error) = db_tx
+                    .send(DbCommand::SaveSession {
+                        session,
+                        reply: reply_tx,
+                    })
+                    .await
+                {
+                    eprintln!(
+                        "[session-persist] Failed to enqueue save command: {error}"
+                    );
+                    return;
+                }
     
                     match reply_rx.await {
                         Ok(Ok(())) => {}

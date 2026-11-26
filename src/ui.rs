@@ -1,5 +1,6 @@
 pub mod theme;
 pub mod labels;
+pub mod mpsc_ui;
 
 use anyhow::{Context, Result};
 use colored::Colorize;

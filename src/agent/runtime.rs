@@ -18,6 +18,7 @@ use crate::{
     }
 };
 
+
 pub async fn run_stream(
     ctx: &mut AppContext,
     prompt: &str,
@@ -32,7 +33,7 @@ pub async fn run_stream(
 
     let pb = ui.build_spinner(&model_id)?; 
 
-    let mut stream = agent
+    let mut stream = agent.inner
         .prompt(prompt)
         .history(history)
         .stream();
@@ -47,7 +48,6 @@ pub async fn run_stream(
 
     while let Some(item) = stream.next().await {
         match item {
-            // ---- thinking ----
             Ok(MultiTurnStreamItem::StreamAssistantItem(
                 StreamItem::Event(StreamEvent::Reasoning { text, .. }),
             )) => {
@@ -56,14 +56,12 @@ pub async fn run_stream(
                     ui.write_reasoning(&text)?;
                 }
             }
-            // ---- answer ----
             Ok(MultiTurnStreamItem::StreamAssistantItem(
                 StreamItem::Event(StreamEvent::Text { text, .. }),
             )) => {
                 pb.finish_and_clear();
                 ui.write_text(&text)?;         
             }
-            // ---- CompletionCall ----
             Ok(MultiTurnStreamItem::CompletionCall(call)) => {
                 let record = state.provider.parse_call_metrics(&model_id, &call.raw);
                 if let Err(error) = state.record_call(record).await {
@@ -72,7 +70,6 @@ pub async fn run_stream(
                     );
                 }
             }
-            // ---- final ----
             Ok(MultiTurnStreamItem::FinalResponse(response)) => {
                 pb.finish_and_clear();
 

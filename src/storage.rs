@@ -48,7 +48,7 @@ impl StorageManager {
         })
     }
 
-    pub(crate) fn db_sender(&self) -> mpsc::UnboundedSender<DbCommand> {
+    pub(crate) fn db_sender(&self) -> mpsc::Sender<DbCommand> {
         self.db_actor.sender()
     }
 
