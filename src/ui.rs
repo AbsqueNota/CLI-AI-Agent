@@ -10,8 +10,8 @@ use anyhow::Result;
 use colored::Colorize;
 
 use std::{
-    fmt::Display,
     io::{self, Write},
+    fmt::Display,
     sync::Arc,
 };
 
@@ -77,27 +77,6 @@ impl TerminalUi {
         );
     }
 
-    pub fn welcome_hint(&self) {
-        println!(
-            "\n{} {} {} {} {}\n",
-            "Type".color(self.theme.palette.hint),
-            "/help".color(self.theme.palette.main).bold(),
-            "or".color(self.theme.palette.hint),
-            "/h".color(self.theme.palette.main).bold(),
-            "for commands.".color(self.theme.palette.hint)
-        );
-    }
-
-    // ---- Model ----
-
-    pub fn selected_model(&self, model_id: &str) {
-        println!(
-            "{}{}",
-            "🤖:",
-            model_id.color(self.theme.palette.main)
-        );
-    }
-
     // ---- Ratatui menus ----
 
     pub fn select<T: Display>(
@@ -140,27 +119,7 @@ impl TerminalUi {
         )
     }
 
-    pub fn echo_input(
-        &self,
-        prompt: &str,
-        input: &str,
-    ) -> Result<()> {
-        println!(
-            "{} {}",
-            prompt.color(self.theme.palette.main).bold(),
-            input.color(self.theme.palette.default),
-        );
-
-        io::stdout().flush()?;
-
-        Ok(())
-    }
-
     // ---- Status messages ----
-
-    pub fn new_line(&self) {
-        println!();
-    }
 
     pub fn goodbye(&self) {
         println!(
@@ -192,10 +151,6 @@ impl TerminalUi {
     }
 
     // ---- MPSC UI ----
-
-    pub fn start_output(&mut self) {
-        self.mpsc_ui.start((*self.theme).clone());
-    }
 
     pub fn event_sender(&self) -> mpsc::Sender<UiEvent> {
         self.mpsc_ui.sender()
