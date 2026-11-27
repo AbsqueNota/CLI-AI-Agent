@@ -1,4 +1,3 @@
-
 use std::collections::{HashMap, VecDeque};
 
 pub type AgentId = String;
@@ -82,6 +81,8 @@ impl UiState {
             role,
             content: content.into(),
         });
+
+        self.scroll_offset = 0;
     }
 
     pub fn set_status(&mut self, status: impl Into<String>) {
@@ -90,5 +91,17 @@ impl UiState {
 
     pub fn active_agents(&self) -> usize {
         self.agents.len()
+    }
+
+    pub fn scroll_up(&mut self, amount: u16) {
+        self.scroll_offset = self.scroll_offset.saturating_add(amount);
+    }
+
+    pub fn scroll_down(&mut self, amount: u16) {
+        self.scroll_offset = self.scroll_offset.saturating_sub(amount);
+    }
+
+    pub fn scroll_to_bottom(&mut self) {
+        self.scroll_offset = 0;
     }
 }

@@ -1,43 +1,66 @@
 use anyhow::Result;
+
 use crate::{
-    ui::TerminalUi,
     app::{
         AppContext,
         commands::execute_command,
+    },
+    ui::{
+        TerminalUi,
+        mpsc_ui::UiAction,
     },
     agent::runtime::run_stream,
 };
 
 pub async fn chat_loop(ctx: &mut AppContext) -> Result<()> {
-    ctx.ui.welcome_hint();
-    ctx.ui.start_output();
-    
+    let mut actions = ctx.ui.start_chat()?;
+
     loop {
-        ctx.ui.selected_model(&ctx.state.current_model.id);
-
-        let raw = ctx.ui.input("You",false)?;
-        let input = raw.trim();
-
-        ctx.ui.echo_input("You", input)?;
-
-        if input.is_empty() {
-            continue;
-        }
-
-        if input == "/exit" || input == "/q" {
-            ctx.ui.goodbye();
+        let Some(action) = actions.recv().await else {
             break;
-        }
+        };
 
-        if input.starts_with('/') {
-            execute_command(input, ctx).await?;
-            continue;
-        }
-        
-        if let Err(error) = run_stream(ctx, input).await {
-            TerminalUi::error(&format!("Agent error: {error}"));
+        match action {
+            UiAction::Exit => {
+                break;
+            }
+
+            UiAction::Submit(raw) => {
+                let input = raw.trim();
+
+                if input.is_empty() {
+                    continue;
+                }
+
+                if input == "/exit" || input == "/q" {
+                    break;
+                }
+
+                if input.starts_with('/') {
+                    ctx.ui.suspend_chat().await?;
+
+                    let command_result = execute_command(input, ctx).await;
+
+                    let resume_result = ctx.ui.resume_chat().await;
+
+                    command_result?;
+                    resume_result?;
+
+                    continue;
+                }
+
+                if let Err(error) = run_stream(ctx, input).await {
+                    TerminalUi::error(
+                        &format!("Agent error: {error:#}")
+                    );
+                }
+            }
         }
     }
+
     ctx.ui.shutdown_output().await?;
+
+    ctx.ui.goodbye();
+
     Ok(())
 }

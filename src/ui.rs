@@ -28,8 +28,9 @@ use crate::{
         },
         mpsc_ui::{
             UiActor,
+            UiAction,
             UiEvent,
-        }
+        },
     },
 };
 
@@ -46,6 +47,26 @@ impl TerminalUi {
             menu_labels: MenuLabels::default(),
             mpsc_ui: UiActor::new(),
         }
+    }
+
+    // ---- Chat ----
+
+    pub fn start_chat(&mut self) -> Result<mpsc::Receiver<UiAction>> {
+        self.mpsc_ui.start((*self.theme).clone());
+    
+        self.mpsc_ui
+            .take_actions()
+            .ok_or_else(|| anyhow::anyhow!("Chat UI actions already taken"))
+    }
+    
+    pub async fn suspend_chat(&self) -> Result<()> {
+        self.mpsc_ui.suspend().await?;
+        Ok(())
+    }
+    
+    pub async fn resume_chat(&self) -> Result<()> {
+        self.mpsc_ui.resume((*self.theme).clone()).await?;
+        Ok(())
     }
 
     pub fn set_theme(&mut self, theme: AppTheme) {

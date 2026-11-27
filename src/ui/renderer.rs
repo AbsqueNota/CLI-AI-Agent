@@ -63,29 +63,26 @@ pub fn render(
 
     let mut lines = Vec::new();
 
-    for message in &state.messages {
-        let (label, color) = match message.role {
-            MessageRole::User => ("You", info),
-            MessageRole::Assistant => ("Assistant", main),
-            MessageRole::System => ("System", muted),
-            MessageRole::Error => ("Error", Color::Red),
-        };
+    let history_block = Block::default()
+        .title(" Chat ")
+        .borders(Borders::ALL);
 
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!("{label}: "),
-                Style::default()
-                    .fg(color)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                message.content.as_str(),
-                Style::default().fg(default),
-            ),
-        ]));
+    let inner = history_block.inner(areas[1]);
 
-        lines.push(Line::default());
-    }
+    let max_scroll = lines
+        .len()
+        .saturating_sub(inner.height as usize);
+
+    let scroll = max_scroll
+        .saturating_sub(state.scroll_offset as usize)
+        .min(u16::MAX as usize) as u16;
+
+    let history = Paragraph::new(lines.clone())
+        .wrap(Wrap { trim: false })
+        .scroll((scroll, 0))
+        .block(history_block);
+
+    frame.render_widget(history, areas[1]);
 
     // Active agents
 
@@ -164,17 +161,21 @@ pub fn render(
     // Status
 
     let status = Paragraph::new(
-        Line::from(vec![
-            Span::styled(
-                format!(" {} ", state.status),
-                Style::default().fg(info),
-            ),
-            Span::styled(
-                format!("Agents: {}", state.active_agents()),
-                Style::default().fg(muted),
-            ),
-        ])
-    );
+    Line::from(vec![
+        Span::styled(
+            format!(" {} ", state.status),
+            Style::default().fg(info),
+        ),
+        Span::styled(
+            format!("Agents: {}", state.active_agents()),
+            Style::default().fg(muted),
+        ),
+        Span::styled(
+            "  Enter: send  Ctrl+C: exit  PgUp/PgDn: scroll",
+            Style::default().fg(muted),
+        ),
+    ])
+);
 
-    frame.render_widget(status, areas[3]);
+frame.render_widget(status, areas[3]);
 }
