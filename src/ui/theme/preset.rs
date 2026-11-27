@@ -72,6 +72,6 @@ impl Palette {
     }
 }
 
-fn rgb(r: u8, g: u8, b: u8) -> ColoredColor {
+pub fn rgb(r: u8, g: u8, b: u8) -> ColoredColor {
     ColoredColor::TrueColor { r, g, b }
 }

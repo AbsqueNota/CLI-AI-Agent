@@ -1,36 +1,29 @@
 pub mod theme;
 pub mod labels;
 pub mod mpsc_ui;
-
 pub mod terminal;
 pub mod state;
 pub mod renderer;
+pub mod menu;
 
 use anyhow::Result;
 use colored::Colorize;
-use dialoguer::{
-    theme::Theme,
-    Confirm, Input, Select,
-};
 
 use std::{
     fmt::Display,
     io::{self, Write},
     sync::Arc,
 };
+
 use tokio::sync::mpsc;
 
-use crate::{
-    ui::{
-        labels::MenuLabels,
-        theme::{
-            AppTheme,
-        },
-        mpsc_ui::{
-            UiActor,
-            UiAction,
-            UiEvent,
-        },
+use crate::ui::{
+    labels::MenuLabels,
+    theme::AppTheme,
+    mpsc_ui::{
+        UiActor,
+        UiAction,
+        UiEvent,
     },
 };
 
@@ -53,17 +46,17 @@ impl TerminalUi {
 
     pub fn start_chat(&mut self) -> Result<mpsc::Receiver<UiAction>> {
         self.mpsc_ui.start((*self.theme).clone());
-    
+
         self.mpsc_ui
             .take_actions()
             .ok_or_else(|| anyhow::anyhow!("Chat UI actions already taken"))
     }
-    
+
     pub async fn suspend_chat(&self) -> Result<()> {
         self.mpsc_ui.suspend().await?;
         Ok(())
     }
-    
+
     pub async fn resume_chat(&self) -> Result<()> {
         self.mpsc_ui.resume((*self.theme).clone()).await?;
         Ok(())
@@ -105,7 +98,7 @@ impl TerminalUi {
         );
     }
 
-    // ---- Dialoguer ----
+    // ---- Ratatui menus ----
 
     pub fn select<T: Display>(
         &self,
@@ -114,16 +107,13 @@ impl TerminalUi {
         default: usize,
         max_length: Option<usize>,
     ) -> Result<Option<usize>> {
-        let mut select = Select::with_theme(&*self.theme.select_theme)
-            .with_prompt(prompt)
-            .items(items)
-            .default(default);
-
-        if let Some(max_length) = max_length {
-            select = select.max_length(max_length);
-        }
-
-        Ok(select.interact_opt()?)
+        menu::select(
+            &self.theme,
+            prompt,
+            items,
+            default,
+            max_length,
+        )
     }
 
     pub fn input(
@@ -131,11 +121,10 @@ impl TerminalUi {
         prompt: &str,
         allow_empty: bool,
     ) -> Result<String> {
-        Ok(
-            Input::<String>::with_theme(&*self.theme.input_theme)
-                .with_prompt(prompt)
-                .allow_empty(allow_empty)
-                .interact_text()?,
+        menu::input(
+            &self.theme,
+            prompt,
+            allow_empty,
         )
     }
 
@@ -144,36 +133,32 @@ impl TerminalUi {
         prompt: &str,
         default: bool,
     ) -> Result<bool> {
-        Ok(
-            Confirm::with_theme(&*self.theme.select_theme)
-                .with_prompt(prompt)
-                .default(default)
-                .interact()?,
+        menu::confirm(
+            &self.theme,
+            prompt,
+            default,
         )
     }
 
-    pub fn echo_input(&self, prompt: &str, input: &str) -> Result<()> {
-        print!("\x1b[2A\x1b[J");
+    pub fn echo_input(
+        &self,
+        prompt: &str,
+        input: &str,
+    ) -> Result<()> {
+        println!(
+            "{} {}",
+            prompt.color(self.theme.palette.main).bold(),
+            input.color(self.theme.palette.default),
+        );
+
         io::stdout().flush()?;
-
-        let mut formatted = String::new();
-
-        self.theme
-            .input_theme
-            .format_input_prompt_selection(
-                &mut formatted,
-                prompt,
-                input,
-            )?;
-
-        println!("{formatted}");
 
         Ok(())
     }
 
     // ---- Status messages ----
 
-    pub fn new_line(&self){
+    pub fn new_line(&self) {
         println!();
     }
 
@@ -194,7 +179,8 @@ impl TerminalUi {
     pub fn warning(message: &str) {
         eprintln!(
             "\n{}",
-            format!("Warning: {message}").color(AppTheme::warning_color())
+            format!("Warning: {message}")
+                .color(AppTheme::warning_color())
         );
     }
 

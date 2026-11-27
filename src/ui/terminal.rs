@@ -1,10 +1,8 @@
-
 use std::io::{self, Stdout};
 
 use crossterm::{
     execute,
-    event::EnableMouseCapture,
-    event::DisableMouseCapture,
+    event::{EnableMouseCapture, DisableMouseCapture},
     terminal::{
         enable_raw_mode,
         disable_raw_mode,
@@ -15,6 +13,7 @@ use crossterm::{
 
 use ratatui::{
     backend::CrosstermBackend,
+    Frame,
     Terminal,
 };
 
@@ -72,15 +71,22 @@ impl TerminalSession {
         state: &UiState,
         theme: &AppTheme,
     ) -> io::Result<()> {
+        self.draw_with(|frame| {
+            renderer::render(frame, state, theme);
+        })
+    }
+
+    pub fn draw_with<F>(&mut self, draw: F) -> io::Result<()>
+    where
+        F: FnOnce(&mut Frame<'_>),
+    {
         let terminal = self.terminal
             .as_mut()
             .ok_or_else(|| {
                 io::Error::other("Terminal is already restored")
             })?;
 
-        terminal.draw(|frame| {
-            renderer::render(frame, state, theme);
-        })?;
+        terminal.draw(draw)?;
 
         Ok(())
     }
