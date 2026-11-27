@@ -84,7 +84,7 @@ pub async fn select_provider(
     loop {
         let active_provider = state.provider.id();
 
-        let mut items: Vec<String> = providers
+        let items: Vec<String> = providers
             .iter()
             .map(|provider| {
                 if *provider == active_provider {
@@ -94,9 +94,6 @@ pub async fn select_provider(
                 }
             })
             .collect();
-
-        let cancel_index = items.len();
-        items.push(labels.cancel.clone());
 
         let default_index = providers
             .iter()
@@ -111,10 +108,6 @@ pub async fn select_provider(
         )? else {
             return Ok("Provider selection cancelled.".to_string());
         };
-
-        if index == cancel_index {
-            return Ok("Provider selection cancelled.".to_string());
-        }
 
         let Some(selected) = providers.get(index) else {
             let _ = ui.warning("Invalid provider selection.");
@@ -293,7 +286,6 @@ pub fn show_models(state: &AppState, ui: &TerminalUi) -> String {
     result
 }
 
-
 pub async fn select_model(
     state: &mut AppState,
     ui: &TerminalUi,
@@ -387,8 +379,8 @@ pub async fn settings_menu(
     let items = [
         "Change provider",
         "Show current model settings",
+        "Change current model settings",
         "Change theme",
-        "Cancel",
     ];
 
     let Some(selection) = ui.select(
@@ -407,7 +399,8 @@ pub async fn settings_menu(
     match selection {
         0 => select_provider(state, ui).await,
         1 => Ok(show_settings(&state.current_model)),
-        2 => change_theme(state, ui),
+        2 => model_settings_menu(state, ui),
+        3 => change_theme(state, ui),
         _ => Ok("Settings menu closed.".to_string()),
     }
 }
@@ -425,15 +418,13 @@ fn change_theme(
 
     let labels = ui.labels();
     let active_label = labels.active.clone();
-    let cancel_label = labels.cancel.clone();
 
     let default_index = presets
         .iter()
         .position(|preset| *preset == state.config.theme)
         .unwrap_or(0);
 
-    // Формируем отображаемые пункты меню.
-    let mut items: Vec<String> = presets
+    let items: Vec<String> = presets
         .iter()
         .map(|preset| {
             if *preset == state.config.theme {
@@ -444,9 +435,6 @@ fn change_theme(
         })
         .collect();
 
-    let cancel_index = items.len();
-    items.push(cancel_label);
-
     let Some(index) = ui.select(
         "Select theme",
         &items,
@@ -456,22 +444,15 @@ fn change_theme(
         return Ok("Theme selection cancelled.".to_string());
     };
 
-    // Отдельный пункт Cancel.
-    if index == cancel_index {
-        return Ok("Theme selection cancelled.".to_string());
-    }
-
     let selected = presets[index];
 
     if selected == state.config.theme {
         return Ok(format!("Theme '{selected}' is already active."));
     }
 
-    // Сохраняем выбранную тему.
     state.config.theme = selected;
     state.persist_config()?;
 
-    // Применяем тему в текущем UI.
     ui.set_theme(AppTheme::from_preset(selected));
 
     Ok(format!("Theme changed to '{selected}'."))
@@ -556,19 +537,18 @@ pub fn handle_set_command(
             ))
         }
 
-        (None, None) => interactive_settings_menu(state, ui),
+        (None, None) => Err(anyhow!("Empty arguments. Usage: /set <key> <value|default>")),
 
         (None, Some(_)) => unreachable!(),
     }
 }
 
-fn interactive_settings_menu(
+fn model_settings_menu(
     state: &mut AppState,
     ui: &TerminalUi,
 ) -> Result<String> {
     let mut changed = false;
 
-    // Snapshot of initial settings for rollback if <Cancel> is selected
     let initial_preamble = state.current_model.preamble.clone();
     let initial_settings = state.current_model.settings.clone();
     
@@ -581,7 +561,6 @@ fn interactive_settings_menu(
         let hidden_label  = labels.hidden.clone();
         let default_label = labels.default.clone();
         let apply_label   = labels.apply.clone();
-        let cancel_label  = labels.cancel.clone();
 
         let thinking_str = fmt_opt(settings.thinking.as_ref());
         let visible_str = settings.thinking.as_ref()
@@ -623,8 +602,6 @@ fn interactive_settings_menu(
 
         let save_idx = items.len();
         items.push(apply_label);
-        let cancel_idx = items.len();
-        items.push(cancel_label.clone());
 
         let selection = ui.select(
             "Select parameter to edit",
@@ -635,13 +612,6 @@ fn interactive_settings_menu(
         
         match selection {
             None => {
-                state.current_model.preamble = initial_preamble;
-                state.current_model.settings = initial_settings;
-        
-                return Ok("Settings editing cancelled.".to_string());
-            }
-        
-            Some(idx) if idx == cancel_idx => {
                 state.current_model.preamble = initial_preamble;
                 state.current_model.settings = initial_settings;
         
@@ -666,7 +636,6 @@ fn interactive_settings_menu(
                             "medium",
                             "high",
                             "default",
-                            cancel_label.as_str(),
                         ];
         
                         let Some(opt_idx) = ui.select(
@@ -680,7 +649,7 @@ fn interactive_settings_menu(
         
                         let chosen = options[opt_idx];
         
-                        if chosen != cancel_label {
+                        if !chosen.is_empty() {
                             apply_setting(
                                 &mut state.current_model,
                                 "thinking",
@@ -695,7 +664,6 @@ fn interactive_settings_menu(
                         let options = [
                             "true",
                             "false",
-                            cancel_label.as_str(),
                         ];
         
                         let Some(opt_idx) = ui.select(
@@ -709,7 +677,7 @@ fn interactive_settings_menu(
         
                         let chosen = options[opt_idx];
         
-                        if chosen != cancel_label.as_str() {
+                        if !chosen.is_empty() {
                             apply_setting(
                                 &mut state.current_model,
                                 "thinking_visible",
@@ -847,6 +815,7 @@ pub fn help() -> String {
         out,
         "\
 Available commands:
+
   /capabilities, /cp                    Show current model capabilities
   /clear,        /cl                    Clear current session history
   /exit,         /q                     Exit the application
@@ -856,14 +825,15 @@ Available commands:
   /new,          /n                     Start a new chat session
   /provider,     /pr                    Select active LLM provider
   /sessions,     /ss                    Switch or delete saved sessions
-  /set                                  Open interactive settings menu
-  /set <key> <value|default>            Set a specific parameter \"/set top_p 0.9\"
   /settings,     /cfg                   Open application settings
   /stats,        /sts                   Show API call statistics
   /stop,         /st                    Unload current local model from memory
   /undo,         /u                     Remove last user message and model response
 
+  /set <key> <value|default>            Set a specific parameter \"/set top_p 0.9\"
+  
 Settable parameters (/set):
+
   General : preamble, temperature, max_tokens, top_p, seed, stop,
             thinking (on|off|low|medium|high), thinking_visible (true|false)
   Ollama  : keep_alive, num_ctx, num_predict, top_k, min_p,

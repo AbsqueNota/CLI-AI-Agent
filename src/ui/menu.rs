@@ -1,5 +1,5 @@
 use std::fmt::Display;
-
+use std::time::Duration;
 use anyhow::{bail, Result};
 use crossterm::event::{
     self,
@@ -12,7 +12,7 @@ use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
     style::{Modifier, Style},
-    text::{Line, Span},
+    text::{Line, Span, Text},
     widgets::{
         Block,
         Borders,
@@ -112,30 +112,91 @@ fn draw_select(
     frame.render_widget(footer, areas[2]);
 }
 
+
 pub fn notice(
     theme: &AppTheme,
     title: &str,
     message: &str,
 ) -> Result<()> {
     let mut terminal = TerminalSession::new()?;
+    let mut scroll: u16 = 0;
+    let mut max_scroll: u16 = 0;
 
     loop {
         terminal.draw_with(|frame| {
-            let area = frame.area();
+            let areas = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Min(1),
+                    Constraint::Length(1),
+                ])
+                .split(frame.area());
+
+            let info = theme.palette.info;
+            let muted = theme.palette.muted;
 
             let block = Block::default()
                 .title(format!(" {title} "))
-                .borders(Borders::ALL);
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(info));
 
-            let paragraph = Paragraph::new(message)
-                .style(
-                    Style::default()
-                        .fg(theme.palette.default),
-                )
-                .wrap(ratatui::widgets::Wrap { trim: false })
+            let inner = block.inner(areas[0]);
+            let width = inner.width.max(1) as usize;
+            let text = Text::from(message);
+            let content_height: u16 = if text.lines.is_empty() {
+                1
+            } else {
+                text.lines
+                    .iter()
+                    .map(|line| {
+                        let w = line.width();
+                        if w == 0 { 1 } else { w.div_ceil(width) }
+                    })
+                    .sum::<usize>()
+                    .min(u16::MAX as usize) as u16
+            };
+            
+            let content = Paragraph::new(message)
+                .wrap(ratatui::widgets::Wrap { trim: false });
+
+            max_scroll = content_height
+                .saturating_sub(inner.height)
+                .min(u16::MAX);
+
+            
+            scroll = scroll.min(max_scroll);
+
+            let paragraph = content
+                .style(Style::default().fg(info))
+                .scroll((scroll, 0))
                 .block(block);
 
-            frame.render_widget(paragraph, area);
+            frame.render_widget(paragraph, areas[0]);
+
+            let footer = Paragraph::new(Line::from(vec![
+                Span::styled(
+                    " ↑/↓ Scroll ",
+                    Style::default().fg(muted),
+                ),
+                Span::styled(
+                    " PgUp/PgDn Page ",
+                    Style::default().fg(muted),
+                ),
+                Span::styled(
+                    " Home Start ",
+                    Style::default().fg(muted),
+                ),
+                Span::styled(
+                    " End Bottom ",
+                    Style::default().fg(muted),
+                ),
+                Span::styled(
+                    " Enter/Esc Close ",
+                    Style::default().fg(muted),
+                ),
+            ]));
+
+            frame.render_widget(footer, areas[1]);
         })?;
 
         match event::read()? {
@@ -143,6 +204,30 @@ pub fn notice(
                 if key.kind != KeyEventKind::Release =>
             {
                 match key.code {
+                    KeyCode::Up => {
+                        scroll = scroll.saturating_sub(1);
+                    }
+
+                    KeyCode::Down => {
+                        scroll = scroll.saturating_add(1).min(max_scroll);
+                    }
+
+                    KeyCode::PageUp => {
+                        scroll = scroll.saturating_sub(10);
+                    }
+
+                    KeyCode::PageDown => {
+                        scroll = scroll.saturating_add(10).min(max_scroll);
+                    }
+
+                    KeyCode::Home => {
+                        scroll = 0;
+                    }
+
+                    KeyCode::End => {
+                        scroll = max_scroll;
+                    }
+
                     KeyCode::Enter
                     | KeyCode::Esc
                     | KeyCode::Char(' ') => break,
@@ -250,6 +335,7 @@ fn draw_input(
     theme: &AppTheme,
     prompt: &str,
     value: &str,
+    cursor_visible: bool,
 ) {
     let area = frame.area();
 
@@ -276,13 +362,27 @@ fn draw_input(
 
     frame.render_widget(header, areas[0]);
 
-    let input = Paragraph::new(value)
-        .style(Style::default().fg(default))
-        .block(
-            Block::default()
-                .title(" Value ")
-                .borders(Borders::ALL),
-        );
+    let input = Paragraph::new(Line::from(vec![
+        Span::styled(
+            "> ",
+            Style::default()
+                .fg(main)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            value,
+            Style::default().fg(default),
+        ),
+        Span::styled(
+            if cursor_visible { "_" } else { " " },
+            Style::default().fg(default),
+        ),
+    ]))
+    .block(
+        Block::default()
+            .title(" Value ")
+            .borders(Borders::ALL),
+    );
 
     frame.render_widget(input, areas[1]);
 
@@ -302,12 +402,24 @@ pub fn input(
     allow_empty: bool,
 ) -> Result<String> {
     let mut value = String::new();
+    let mut cursor_visible = true;
     let mut terminal = TerminalSession::new()?;
 
     loop {
         terminal.draw_with(|frame| {
-            draw_input(frame, theme, prompt, &value);
+            draw_input(
+                frame,
+                theme,
+                prompt,
+                &value,
+                cursor_visible,
+            );
         })?;
+
+        if !event::poll(Duration::from_millis(500))? {
+            cursor_visible = !cursor_visible;
+            continue;
+        }
 
         match event::read()? {
             Event::Key(key) => {
