@@ -32,6 +32,19 @@ pub enum AgentPhase {
 pub struct AgentViewState {
     pub model_id: String,
     pub phase: AgentPhase,
+    pub reasoning: String,
+    pub answer: String,
+}
+
+impl AgentViewState {
+    pub fn new(model_id: impl Into<String>) -> Self {
+        Self {
+            model_id: model_id.into(),
+            phase: AgentPhase::Starting,
+            reasoning: String::new(),
+            answer: String::new(),
+        }
+    }
 }
 
 #[derive(Debug)]

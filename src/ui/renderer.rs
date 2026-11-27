@@ -8,7 +8,7 @@ use ratatui::{
 };
 
 use crate::ui::{
-    state::{MessageRole, UiState},
+    state::{AgentPhase, MessageRole, UiState},
     theme::AppTheme,
 };
 
@@ -87,6 +87,57 @@ pub fn render(
         lines.push(Line::default());
     }
 
+    // Active agents
+
+    for agent in state.agents.values() {
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("[{}]", agent.model_id),
+                Style::default()
+                    .fg(main)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                match agent.phase {
+                    AgentPhase::Starting => " starting",
+                    AgentPhase::Reasoning => " thinking",
+                    AgentPhase::Answering => " answering",
+                    AgentPhase::Finished => " finished",
+                    AgentPhase::Failed => " failed",
+                },
+                Style::default().fg(muted),
+            ),
+        ]));
+
+        if !agent.reasoning.is_empty() {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    "thinking: ",
+                    Style::default().fg(muted),
+                ),
+                Span::styled(
+                    agent.reasoning.as_str(),
+                    Style::default().fg(muted),
+                ),
+            ]));
+        }
+
+        if !agent.answer.is_empty() {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    "answer: ",
+                    Style::default().fg(info),
+                ),
+                Span::styled(
+                    agent.answer.as_str(),
+                    Style::default().fg(default),
+                ),
+            ]));
+        }
+
+        lines.push(Line::default());
+    }
+
     let history = Paragraph::new(lines)
         .wrap(Wrap { trim: false })
         .scroll((state.scroll_offset, 0))
@@ -98,7 +149,7 @@ pub fn render(
 
     frame.render_widget(history, areas[1]);
 
-    // Input
+    // Input placeholder
 
     let input = Paragraph::new(state.input.as_str())
         .style(Style::default().fg(default))

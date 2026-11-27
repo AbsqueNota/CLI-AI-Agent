@@ -129,13 +129,21 @@ pub async fn run_stream(
     drop(stream);
 
     if let Some(error) = stream_error {
-        let _ = ui_tx
+        let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
+    
+        ui_tx
             .send(UiEvent::Failed {
                 agent_id,
                 error: error.to_string(),
+                ack: Some(ack_tx),
             })
-            .await;
-
+            .await
+            .context("Failed to send UI Failed event")?;
+    
+        ack_rx
+            .await
+            .context("UI actor stopped before processing Failed event")?;
+    
         return Err(anyhow::anyhow!(error));
     }
 
@@ -143,16 +151,25 @@ pub async fn run_stream(
         let error = anyhow::anyhow!(
             "{model_id}: stream ended without FinalResponse"
         );
-
-        let _ = ui_tx
+    
+        let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
+    
+        ui_tx
             .send(UiEvent::Failed {
                 agent_id,
                 error: error.to_string(),
+                ack: Some(ack_tx),
             })
-            .await;
-
+            .await
+            .context("Failed to send UI Failed event")?;
+    
+        ack_rx
+            .await
+            .context("UI actor stopped before processing Failed event")?;
+    
         return Err(error);
     }
+    
     let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
     ui_tx
         .send(UiEvent::Finished {
