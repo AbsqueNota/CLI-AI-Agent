@@ -65,10 +65,10 @@ pub fn select_initial_provider(
                 return Ok(InitialProviderSelection::Selected(provider));
             }
             Err(error) => {
-                TerminalUi::error(&format!(
+                ui.error(&format!(
                     "Failed to initialize provider '{}': {error:#}",
                     provider_name
-                ));
+                ))?;
             }
         }
     }
@@ -117,7 +117,7 @@ pub async fn select_provider(
         }
 
         let Some(selected) = providers.get(index) else {
-            TerminalUi::warning("Invalid provider selection.");
+            let _ = ui.warning("Invalid provider selection.");
             continue;
         };
 
@@ -137,7 +137,7 @@ pub async fn select_provider(
                 ));
             }
             Err(error) => {
-                TerminalUi::error(&format!(
+                let _ = ui.error(&format!(
                     "Could not switch to provider '{selected}': {error:#}"
                 ));
             }

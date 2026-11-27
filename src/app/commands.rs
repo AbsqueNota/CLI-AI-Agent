@@ -2,7 +2,6 @@ pub mod snippets;
 
 use anyhow::Result;
 use crate::app::AppContext;
-use crate::ui::TerminalUi;
 use super::commands::snippets::{
     settings_menu,
     select_provider,
@@ -25,7 +24,9 @@ pub async fn execute_command(
 ) -> Result<bool> {
     let AppContext { state, ui } = ctx;
     let mut parts = command.trim().splitn(3, ' ');
+
     let cmd = parts.next().unwrap_or("");
+
     let arg1 = parts.next();
     let arg2 = parts.next();
 
@@ -61,11 +62,11 @@ pub async fn execute_command(
 
     match result {
         Ok(message) => {
-            ui.info(&message);
+            ui.info(&message)?;
             Ok(true)
         }
         Err(error) => {
-            TerminalUi::error(&format!("[execute_command]: {error:#}"));
+            ui.error(&format!("[execute_command]: {error:#}"))?;
             Ok(false)
         }
     }

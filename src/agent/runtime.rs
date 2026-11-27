@@ -17,7 +17,6 @@ use crate::{
     dto::ChatSession,
     models::capabilities::CapabilityKey,
     ui::{
-        TerminalUi,
         mpsc_ui::UiEvent,
     },
 };
@@ -97,9 +96,9 @@ pub async fn run_stream(
                     .parse_call_metrics(&model_id, &call.raw);
 
                 if let Err(error) = state.record_call(record).await {
-                    TerminalUi::warning(
+                    ui.warning(
                         &format!("Failed to record call stats: {error}"),
-                    );
+                    )?;
                 }
             }
 
@@ -169,7 +168,7 @@ pub async fn run_stream(
     
         return Err(error);
     }
-    
+
     let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
     ui_tx
         .send(UiEvent::Finished {

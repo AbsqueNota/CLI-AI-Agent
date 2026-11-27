@@ -1,4 +1,8 @@
+
 use std::collections::{HashMap, VecDeque};
+
+use rig::message::Message;
+use serde_json::Value;
 
 pub type AgentId = String;
 
@@ -9,6 +13,9 @@ pub enum MessageRole {
     User,
     Assistant,
     System,
+    Tool,
+    Info,
+    Warning,
     Error,
 }
 
@@ -48,7 +55,12 @@ impl AgentViewState {
 
 #[derive(Debug)]
 pub struct UiState {
+    // История диалога из AppState.
     pub messages: VecDeque<ChatMessage>,
+
+    // Служебные уведомления UI, не сохраняемые в ChatSession.
+    pub notices: VecDeque<ChatMessage>,
+
     pub input: String,
     pub status: String,
     pub agents: HashMap<AgentId, AgentViewState>,
@@ -59,6 +71,7 @@ impl Default for UiState {
     fn default() -> Self {
         Self {
             messages: VecDeque::new(),
+            notices: VecDeque::new(),
             input: String::new(),
             status: String::from("Ready"),
             agents: HashMap::new(),
@@ -68,6 +81,79 @@ impl Default for UiState {
 }
 
 impl UiState {
+    pub fn messages_from_history(
+        history: &[Message],
+    ) -> VecDeque<ChatMessage> {
+        let mut messages = VecDeque::new();
+
+        for message in history {
+            let Ok(value) = serde_json::to_value(message) else {
+                continue;
+            };
+
+            let Some(role) = value
+                .get("role")
+                .and_then(Value::as_str)
+            else {
+                continue;
+            };
+
+            let role = match role {
+                "user" => MessageRole::User,
+                "assistant" => MessageRole::Assistant,
+                "system" => MessageRole::System,
+                "tool" => MessageRole::Tool,
+                _ => continue,
+            };
+
+            let Some(content) = value.get("content") else {
+                continue;
+            };
+
+            let text = match content {
+                Value::String(text) => text.clone(),
+
+                Value::Array(parts) => parts
+                    .iter()
+                    .filter_map(|part| {
+                        part.get("text")
+                            .and_then(Value::as_str)
+                    })
+                    .collect::<String>(),
+
+                Value::Object(object) => object
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+
+                _ => String::new(),
+            };
+
+            if text.is_empty() {
+                continue;
+            }
+
+            if messages.len() >= MAX_HISTORY_MESSAGES {
+                messages.pop_front();
+            }
+
+            messages.push_back(ChatMessage {
+                role,
+                content: text,
+            });
+        }
+
+        messages
+    }
+
+    /// Заменяет только историю диалога.
+    /// Уведомления и активные агенты сохраняются.
+    pub fn load_history(&mut self, history: &[Message]) {
+        self.messages = Self::messages_from_history(history);
+        self.scroll_to_bottom();
+    }
+
     pub fn push_message(
         &mut self,
         role: MessageRole,
@@ -82,7 +168,24 @@ impl UiState {
             content: content.into(),
         });
 
-        self.scroll_offset = 0;
+        self.scroll_to_bottom();
+    }
+
+    pub fn push_notice(
+        &mut self,
+        role: MessageRole,
+        content: impl Into<String>,
+    ) {
+        if self.notices.len() >= MAX_HISTORY_MESSAGES {
+            self.notices.pop_front();
+        }
+
+        self.notices.push_back(ChatMessage {
+            role,
+            content: content.into(),
+        });
+
+        self.scroll_to_bottom();
     }
 
     pub fn set_status(&mut self, status: impl Into<String>) {

@@ -23,22 +23,31 @@ async fn main() -> Result<()> {
     let app_name = env!("CARGO_PKG_NAME");
     let storage = StorageManager::new(app_name)?;
 
-    let config = storage.load_config().unwrap_or_else(|error| {
-        TerminalUi::warning(
-            &format!("Failed to load config ({error:#}), using defaults."));
-        AppConfig::default()
-    });
+    let (config, config_warning) = match storage.load_config() {
+        Ok(config) => (config, None),
+    
+        Err(error) => (
+            AppConfig::default(),
+            Some(format!(
+                "Failed to load config ({error:#}), using defaults."
+            )),
+        ),
+    };
 
     let ui = TerminalUi::new(
         AppTheme::from_preset(config.theme)
     );
+
+    if let Some(warning) = config_warning {
+        ui.warning(&warning)?;
+    }
 
     let provider = 
         match select_initial_provider(&config.provider, &ui)? {
             InitialProviderSelection::Selected(provider) => provider,
         
             InitialProviderSelection::Exit => {
-                ui.goodbye();
+                ui.goodbye()?;
                 return Ok(());
             }
         };

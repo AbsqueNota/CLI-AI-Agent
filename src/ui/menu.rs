@@ -112,6 +112,54 @@ fn draw_select(
     frame.render_widget(footer, areas[2]);
 }
 
+pub fn notice(
+    theme: &AppTheme,
+    title: &str,
+    message: &str,
+) -> Result<()> {
+    let mut terminal = TerminalSession::new()?;
+
+    loop {
+        terminal.draw_with(|frame| {
+            let area = frame.area();
+
+            let block = Block::default()
+                .title(format!(" {title} "))
+                .borders(Borders::ALL);
+
+            let paragraph = Paragraph::new(message)
+                .style(
+                    Style::default()
+                        .fg(theme.palette.default),
+                )
+                .wrap(ratatui::widgets::Wrap { trim: false })
+                .block(block);
+
+            frame.render_widget(paragraph, area);
+        })?;
+
+        match event::read()? {
+            Event::Key(key)
+                if key.kind != KeyEventKind::Release =>
+            {
+                match key.code {
+                    KeyCode::Enter
+                    | KeyCode::Esc
+                    | KeyCode::Char(' ') => break,
+
+                    _ => {}
+                }
+            }
+
+            _ => {}
+        }
+    }
+
+    terminal.restore()?;
+
+    Ok(())
+}
+
 pub fn select<T: Display>(
     theme: &AppTheme,
     prompt: &str,

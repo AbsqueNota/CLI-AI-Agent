@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
 };
@@ -14,15 +14,16 @@ use crate::ui::{
 fn message_lines(
     message: &ChatMessage,
     lines: &mut Vec<Line<'static>>,
-    default: Color,
-    main: Color,
-    info: Color,
+    theme: &AppTheme,
 ) {
     let (label, label_color) = match message.role {
-        MessageRole::User => ("You", main),
-        MessageRole::Assistant => ("Assistant", info),
-        MessageRole::System => ("System", Color::Gray),
-        MessageRole::Error => ("Error", Color::Red),
+        MessageRole::User      => ("You",       theme.palette.main),
+        MessageRole::Assistant => ("Assistant", theme.palette.info),
+        MessageRole::System    => ("System",    theme.palette.muted),
+        MessageRole::Tool      => ("Tool",      theme.palette.muted),
+        MessageRole::Info      => ("Info",      theme.palette.info),
+        MessageRole::Warning   => ("Warning",   theme.palette.warning),
+        MessageRole::Error     => ("Error",     theme.palette.error),
     };
 
     for (index, content) in message.content.split('\n').enumerate() {
@@ -41,7 +42,7 @@ fn message_lines(
 
         spans.push(Span::styled(
             content.to_string(),
-            Style::default().fg(default),
+            Style::default().fg(theme.palette.default),
         ));
 
         lines.push(Line::from(spans));
@@ -94,12 +95,17 @@ pub fn render(
         message_lines(
             message,
             &mut lines,
-            default,
-            main,
-            info,
+            theme
         );
     }
-
+    
+    for message in state.messages.iter().chain(state.notices.iter()) {
+        message_lines(
+            message,
+            &mut lines,
+            theme,
+        );
+    }
     // Active agents
 
     for agent in state.agents.values() {

@@ -1,3 +1,4 @@
+
 pub mod theme;
 pub mod labels;
 pub mod mpsc_ui;
@@ -6,19 +7,19 @@ pub mod state;
 pub mod renderer;
 pub mod menu;
 
-use anyhow::Result;
-
+use anyhow::{anyhow, Result};
 use std::{
-    //io::{self, Write},
     fmt::Display,
     sync::Arc,
 };
 
+use rig::message::Message;
 use tokio::sync::mpsc;
 
 use crate::ui::{
     labels::MenuLabels,
     theme::AppTheme,
+    state::{MessageRole, UiState},
     mpsc_ui::{
         UiActor,
         UiAction,
@@ -30,6 +31,7 @@ pub struct TerminalUi {
     theme: Arc<AppTheme>,
     menu_labels: MenuLabels,
     mpsc_ui: UiActor,
+    is_suspended: bool,
 }
 
 impl TerminalUi {
@@ -38,26 +40,46 @@ impl TerminalUi {
             theme: Arc::new(theme),
             menu_labels: MenuLabels::default(),
             mpsc_ui: UiActor::new(),
+            is_suspended: false,
         }
     }
 
     // ---- Chat ----
 
-    pub fn start_chat(&mut self) -> Result<mpsc::Receiver<UiAction>> {
-        self.mpsc_ui.start((*self.theme).clone());
+    pub fn start_chat(
+        &mut self,
+        history: &[Message],
+    ) -> Result<mpsc::Receiver<UiAction>> {
+        let history = UiState::messages_from_history(history);
+
+        self.mpsc_ui.start(
+            (*self.theme).clone(),
+            history,
+        );
 
         self.mpsc_ui
             .take_actions()
-            .ok_or_else(|| anyhow::anyhow!("Chat UI actions already taken"))
+            .ok_or_else(|| anyhow!("Chat UI actions already taken"))
     }
 
-    pub async fn suspend_chat(&self) -> Result<()> {
+    pub async fn suspend_chat(&mut self) -> Result<()> {
         self.mpsc_ui.suspend().await?;
+        self.is_suspended = true;
         Ok(())
     }
-
-    pub async fn resume_chat(&self) -> Result<()> {
-        self.mpsc_ui.resume((*self.theme).clone()).await?;
+    
+    pub async fn resume_chat(
+        &mut self,
+        history: &[Message],
+    ) -> Result<()> {
+        let history = UiState::messages_from_history(history);
+    
+        self.mpsc_ui
+            .resume((*self.theme).clone(), history)
+            .await?;
+    
+        self.is_suspended = false;
+    
         Ok(())
     }
 
@@ -107,10 +129,61 @@ impl TerminalUi {
         )
     }
 
-    // ---- Status messages ----
+    // ---- Notifications ----
 
-    pub fn goodbye(&self) {
-        println!("\n👋 Goodbye!\n");
+    fn notify(
+        &self,
+        role: MessageRole,
+        title: &str,
+        message: &str,
+    ) -> Result<()> {
+        if self.mpsc_ui.is_started() && !self.is_suspended {
+            self.mpsc_ui
+                .sender()
+                .try_send(UiEvent::Notice {
+                    role,
+                    message: message.to_string(),
+                    ack: None,
+                })
+                .map_err(|error| {
+                    anyhow!("Failed to enqueue UI notification: {error}")
+                })?;
+        } else {
+            menu::notice(&self.theme, title, message)?;
+        }
+        Ok(())
+    }
+
+    pub fn info(&self, message: &str) -> Result<()> {
+        self.notify(
+            MessageRole::Info,
+            "Info",
+            message,
+        )
+    }
+
+    pub fn warning(&self, message: &str) -> Result<()> {
+        self.notify(
+            MessageRole::Warning,
+            "Warning",
+            message,
+        )
+    }
+
+    pub fn error(&self, message: &str) -> Result<()> {
+        self.notify(
+            MessageRole::Error,
+            "Error",
+            message,
+        )
+    }
+
+    pub fn goodbye(&self) -> Result<()> {
+        menu::notice(
+            &self.theme,
+            "Goodbye",
+            "Local AI Assistant has been stopped.",
+        )
     }
 
     // ---- MPSC UI ----

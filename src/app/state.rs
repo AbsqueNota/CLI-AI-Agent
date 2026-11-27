@@ -100,8 +100,9 @@ impl AppState {
                     })
                     .await
                 {
-                    eprintln!(
-                        "[session-persist] Failed to enqueue save command: {error}"
+                    tracing::warn!(
+                        error = %error,
+                        "Failed to enqueue session save command"
                     );
                     return;
                 }
@@ -109,13 +110,15 @@ impl AppState {
                     match reply_rx.await {
                         Ok(Ok(())) => {}
                         Ok(Err(error)) => {
-                            eprintln!(
-                                "[session-persist] Failed to save session: {error}"
+                            tracing::warn!(
+                                error = %error,
+                                "Failed to save session"
                             );
                         }
                         Err(error) => {
-                            eprintln!(
-                                "[session-persist] Database response was dropped: {error}"
+                            tracing::warn!(
+                                error = %error,
+                                "Database response was dropped"
                             );
                         }
                     }

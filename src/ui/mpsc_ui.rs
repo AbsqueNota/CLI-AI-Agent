@@ -1,8 +1,8 @@
 use std::{
     io::{self, Write},
     time::Duration,
+    collections::VecDeque,
 };
-
 use crossterm::event::{
     self,
     Event,
@@ -21,6 +21,7 @@ use crate::ui::{
     state::{
         AgentPhase,
         AgentViewState,
+        ChatMessage,
         MessageRole,
         UiState,
     },
@@ -31,7 +32,6 @@ use crate::ui::{
 pub type AgentId = String;
 
 pub const UI_CHANNEL_CAPACITY: usize = 256;
-
 const UI_ACTION_CAPACITY: usize = 32;
 const UI_FRAME_INTERVAL: Duration = Duration::from_millis(33);
 
@@ -76,7 +76,14 @@ pub enum UiEvent {
 
     Resume {
         theme: AppTheme,
+        history: VecDeque<ChatMessage>,
         ack: oneshot::Sender<()>,
+    },
+
+    Notice {
+        role: MessageRole,
+        message: String,
+        ack: Option<oneshot::Sender<()>>,
     },
 
     Shutdown,
@@ -172,15 +179,9 @@ impl UiActorState {
     fn fail(
         &mut self,
         agent_id: &str,
-        error: String,
+        _error: String,
     ) {
         self.ui.agents.remove(agent_id);
-
-        self.ui.push_message(
-            MessageRole::Error,
-            error,
-        );
-
         self.ui.set_status("Error");
     }
 
@@ -189,8 +190,6 @@ impl UiActorState {
         key: KeyEvent,
         action_tx: &mpsc::Sender<UiAction>,
     ) {
-        // Во время генерации блокируем изменение input,
-        // но оставляем прокрутку истории доступной.
         if self.ui.active_agents() > 0 {
             match key.code {
                 KeyCode::PageUp => self.ui.scroll_up(10),
@@ -367,14 +366,34 @@ impl UiActorState {
 
                         UiEvent::Resume {
                             theme: new_theme,
+                            history,
                             ack,
                         } => {
                             theme = new_theme;
-
+                        
+                            self.ui.messages = history;
+                            self.ui.scroll_to_bottom();
+                        
                             self.start_terminal()?;
                             self.draw(&theme)?;
-
+                        
                             let _ = ack.send(());
+                        }
+                        
+                        UiEvent::Notice {
+                            role,
+                            message,
+                            ack,
+                        } => {
+                            self.ui.push_notice(role, message);
+                        
+                            if self.terminal.is_some() {
+                                self.draw(&theme)?;
+                            }
+                        
+                            if let Some(ack) = ack {
+                                let _ = ack.send(());
+                            }
                         }
 
                         UiEvent::Shutdown => {
@@ -434,21 +453,31 @@ impl UiActor {
         self.action_rx.take()
     }
 
-    pub fn start(&mut self, theme: AppTheme) {
+    pub fn is_started(&self) -> bool {
+        self.task.is_some()
+    }
+    
+    pub fn start(
+        &mut self,
+        theme: AppTheme,
+        history: VecDeque<ChatMessage>,
+    ) {
         if self.task.is_some() {
             return;
         }
-
+    
         let Some(rx) = self.rx.take() else {
             return;
         };
-
+    
         let action_tx = self.action_tx.clone();
-
+    
         self.task = Some(tokio::spawn(async move {
-            UiActorState::default()
-                .run(rx, action_tx, theme)
-                .await
+            let mut state = UiActorState::default();
+    
+            state.ui.messages = history;
+    
+            state.run(rx, action_tx, theme).await
         }));
     }
 
@@ -467,18 +496,20 @@ impl UiActor {
     pub async fn resume(
         &self,
         theme: AppTheme,
+        history: VecDeque<ChatMessage>,
     ) -> anyhow::Result<()> {
         let (ack_tx, ack_rx) = oneshot::channel();
-
+    
         self.tx
             .send(UiEvent::Resume {
                 theme,
+                history,
                 ack: ack_tx,
             })
             .await?;
-
+    
         ack_rx.await?;
-
+    
         Ok(())
     }
 
