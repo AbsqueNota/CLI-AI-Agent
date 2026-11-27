@@ -2,6 +2,10 @@ pub mod theme;
 pub mod labels;
 pub mod mpsc_ui;
 
+pub mod terminal;
+pub mod state;
+pub mod renderer;
+
 use anyhow::Result;
 use colored::Colorize;
 use dialoguer::{
