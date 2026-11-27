@@ -1,9 +1,6 @@
 pub mod preset;
 
 use std::fmt;
-
-use colored::Color;
-
 use crate::ui::theme::preset::{
     Palette,
     ThemePreset,
@@ -20,8 +17,6 @@ impl AppTheme {
             palette: Palette::from_preset(preset),
         }
     }
-    pub fn error_color()   -> Color { preset::rgb(255,  75, 92) }
-    pub fn warning_color() -> Color { preset::rgb(255, 196, 87) }
 }
 
 impl Default for AppTheme {

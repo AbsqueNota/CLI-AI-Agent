@@ -1,4 +1,4 @@
-use colored::Color as ColoredColor;
+use ratatui::style::Color;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -27,51 +27,68 @@ impl fmt::Display for ThemePreset {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Palette {
-    pub main    : ColoredColor,
-    pub default : ColoredColor,
-    pub muted   : ColoredColor,
-    pub info    : ColoredColor,
-    pub hint    : ColoredColor,
+    pub main    : Color,
+    pub default : Color,
+    pub muted   : Color,
+    pub info    : Color,
+    pub hint    : Color,
+    pub error   : Color,
+    pub warning : Color, 
 }
+
+impl Default for Palette {
+    fn default() -> Self {
+        Self {
+            main    : Color::Rgb(210, 215, 228),
+            default : Color::Rgb(165, 172, 188),
+            muted   : Color::Rgb( 68,  73,  88),
+            hint    : Color::Rgb(120, 130, 152),
+            info    : Color::Rgb(142, 150, 170),
+            error   : Color::Rgb(255,  75,  92),
+            warning : Color::Rgb(255, 196,  87),
+        }
+    }
+}
+
 
 impl Palette {
     pub fn from_preset(preset: ThemePreset) -> Self {
         match preset {
             ThemePreset::Neon => Self {
-                main    : rgb(168,255,0),
-                default : rgb(240,255,250),
-                muted   : rgb(72, 102,92),
-                hint    : rgb(0,  255,235),
-                info    : rgb(185,75, 255),
+                main    : Color::Rgb(168,255,  0),
+                default : Color::Rgb(240,255,250),
+                muted   : Color::Rgb( 72,102, 92),
+                hint    : Color::Rgb(  0,255,235),
+                info    : Color::Rgb(185, 75,255),
+                ..Self::default()
             },
 
             ThemePreset::Pink => Self {
-                main    : rgb(255, 45, 135),
-                default : rgb(255, 232, 242),
-                muted   : rgb(148, 96, 118),
-                hint    : rgb(255, 130, 185),
-                info    : rgb(230, 70, 165),
+                main    : Color::Rgb(255, 45,135),
+                default : Color::Rgb(255,232,242),
+                muted   : Color::Rgb(148, 96,118),
+                hint    : Color::Rgb(255,130,185),
+                info    : Color::Rgb(230, 70,165),
+                ..Self::default()
             },
 
             ThemePreset::Dark => Self {
-                main    : rgb(210, 215, 228),
-                default : rgb(165, 172, 188),
-                muted   : rgb(68, 73, 88),
-                hint    : rgb(120, 130, 152),
-                info    : rgb(142, 150, 170),
+                main    : Color::Rgb(210,215,228),
+                default : Color::Rgb(165,172,188),
+                muted   : Color::Rgb( 68, 73, 88),
+                hint    : Color::Rgb(120,130,152),
+                info    : Color::Rgb(142,150,170),
+                ..Self::default()
             },
 
             ThemePreset::Light => Self {
-                main    : rgb(20, 24, 33),
-                default : rgb(42, 48, 62),
-                muted   : rgb(150, 157, 173),
-                hint    : rgb(32, 86, 150),
-                info    : rgb(36, 104, 112),
+                main    : Color::Rgb( 20, 24, 33),
+                default : Color::Rgb( 42, 48, 62),
+                muted   : Color::Rgb(150,157,173),
+                hint    : Color::Rgb( 32, 86,150),
+                info    : Color::Rgb( 36,104,112),
+                ..Self::default()
             },
         }
     }
-}
-
-pub fn rgb(r: u8, g: u8, b: u8) -> ColoredColor {
-    ColoredColor::TrueColor { r, g, b }
 }

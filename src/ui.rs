@@ -7,10 +7,9 @@ pub mod renderer;
 pub mod menu;
 
 use anyhow::Result;
-use colored::Colorize;
 
 use std::{
-    io::{self, Write},
+    //io::{self, Write},
     fmt::Display,
     sync::Arc,
 };
@@ -66,17 +65,6 @@ impl TerminalUi {
         self.theme = Arc::new(theme);
     }
 
-    // ---- Welcome ----
-
-    pub fn welcome_title(&self) {
-        println!(
-            "\n{}",
-            "✦ Local AI Assistant ✦"
-                .color(self.theme.palette.main)
-                .bold()
-        );
-    }
-
     // ---- Ratatui menus ----
 
     pub fn select<T: Display>(
@@ -122,32 +110,7 @@ impl TerminalUi {
     // ---- Status messages ----
 
     pub fn goodbye(&self) {
-        println!(
-            "\n👋 {}\n",
-            "Goodbye!".color(self.theme.palette.info)
-        );
-    }
-
-    pub fn error(message: &str) {
-        eprintln!(
-            "\n{}",
-            message.color(AppTheme::error_color()).bold()
-        );
-    }
-
-    pub fn warning(message: &str) {
-        eprintln!(
-            "\n{}",
-            format!("Warning: {message}")
-                .color(AppTheme::warning_color())
-        );
-    }
-
-    pub fn info(&self, message: &str) {
-        println!(
-            "\n{}\n",
-            message.color(self.theme.palette.info)
-        );
+        println!("\n👋 Goodbye!\n");
     }
 
     // ---- MPSC UI ----

@@ -1,4 +1,3 @@
-
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
@@ -8,17 +7,47 @@ use ratatui::{
 };
 
 use crate::ui::{
-    state::{AgentPhase, MessageRole, UiState},
+    state::{AgentPhase, ChatMessage, MessageRole, UiState},
     theme::AppTheme,
 };
 
-fn to_ratatui_color(color: colored::Color) -> Color {
-    match color {
-        colored::Color::TrueColor { r, g, b } => {
-            Color::Rgb(r, g, b)
+fn message_lines(
+    message: &ChatMessage,
+    lines: &mut Vec<Line<'static>>,
+    default: Color,
+    main: Color,
+    info: Color,
+) {
+    let (label, label_color) = match message.role {
+        MessageRole::User => ("You", main),
+        MessageRole::Assistant => ("Assistant", info),
+        MessageRole::System => ("System", Color::Gray),
+        MessageRole::Error => ("Error", Color::Red),
+    };
+
+    for (index, content) in message.content.split('\n').enumerate() {
+        let mut spans = Vec::new();
+
+        if index == 0 {
+            spans.push(Span::styled(
+                format!("{label}: "),
+                Style::default()
+                    .fg(label_color)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        } else {
+            spans.push(Span::raw("  "));
         }
-        _ => Color::Reset,
+
+        spans.push(Span::styled(
+            content.to_string(),
+            Style::default().fg(default),
+        ));
+
+        lines.push(Line::from(spans));
     }
+
+    lines.push(Line::default());
 }
 
 pub fn render(
@@ -28,10 +57,10 @@ pub fn render(
 ) {
     let palette = &theme.palette;
 
-    let main = to_ratatui_color(palette.main);
-    let default = to_ratatui_color(palette.default);
-    let muted = to_ratatui_color(palette.muted);
-    let info = to_ratatui_color(palette.info);
+    let main = palette.main;
+    let default = palette.default;
+    let muted = palette.muted;
+    let info = palette.info;
 
     let areas = Layout::default()
         .direction(Direction::Vertical)
@@ -45,16 +74,14 @@ pub fn render(
 
     // Header
 
-    let header = Paragraph::new(
-        Line::from(vec![
-            Span::styled(
-                "✦ Local AI Assistant ✦",
-                Style::default()
-                    .fg(main)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ])
-    )
+    let header = Paragraph::new(Line::from(vec![
+        Span::styled(
+            "✦ Local AI Assistant ✦",
+            Style::default()
+                .fg(main)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]))
     .block(Block::default().borders(Borders::ALL));
 
     frame.render_widget(header, areas[0]);
@@ -63,26 +90,15 @@ pub fn render(
 
     let mut lines = Vec::new();
 
-    let history_block = Block::default()
-        .title(" Chat ")
-        .borders(Borders::ALL);
-
-    let inner = history_block.inner(areas[1]);
-
-    let max_scroll = lines
-        .len()
-        .saturating_sub(inner.height as usize);
-
-    let scroll = max_scroll
-        .saturating_sub(state.scroll_offset as usize)
-        .min(u16::MAX as usize) as u16;
-
-    let history = Paragraph::new(lines.clone())
-        .wrap(Wrap { trim: false })
-        .scroll((scroll, 0))
-        .block(history_block);
-
-    frame.render_widget(history, areas[1]);
+    for message in &state.messages {
+        message_lines(
+            message,
+            &mut lines,
+            default,
+            main,
+            info,
+        );
+    }
 
     // Active agents
 
@@ -113,7 +129,7 @@ pub fn render(
                     Style::default().fg(muted),
                 ),
                 Span::styled(
-                    agent.reasoning.as_str(),
+                    agent.reasoning.clone(),
                     Style::default().fg(muted),
                 ),
             ]));
@@ -126,7 +142,7 @@ pub fn render(
                     Style::default().fg(info),
                 ),
                 Span::styled(
-                    agent.answer.as_str(),
+                    agent.answer.clone(),
                     Style::default().fg(default),
                 ),
             ]));
@@ -135,18 +151,44 @@ pub fn render(
         lines.push(Line::default());
     }
 
+    let history_block = Block::default()
+        .title(" Chat ")
+        .borders(Borders::ALL);
+
+    let inner = history_block.inner(areas[1]);
+
+    let content_height: u16 = if inner.width == 0 {
+        0
+    } else {
+        let width = inner.width as usize;
+        lines
+            .iter()
+            .map(|line| {
+                let w = line.width();
+                if w == 0 { 1 } else { w.div_ceil(width) }
+            })
+            .sum::<usize>()
+            .min(u16::MAX as usize) as u16
+    };
+
     let history = Paragraph::new(lines)
-        .wrap(Wrap { trim: false })
-        .scroll((state.scroll_offset, 0))
-        .block(
-            Block::default()
-                .title(" Chat ")
-                .borders(Borders::ALL),
-        );
+        .wrap(Wrap { trim: false });
+
+
+    let max_scroll = content_height
+        .saturating_sub(inner.height as u16);
+
+    let scroll = max_scroll
+        .saturating_sub(state.scroll_offset as u16)
+        .min(u16::MAX);
+
+    let history = history
+        .scroll((scroll, 0))
+        .block(history_block);
 
     frame.render_widget(history, areas[1]);
 
-    // Input placeholder
+    // Input
 
     let input = Paragraph::new(state.input.as_str())
         .style(Style::default().fg(default))
@@ -160,8 +202,7 @@ pub fn render(
 
     // Status
 
-    let status = Paragraph::new(
-    Line::from(vec![
+    let status = Paragraph::new(Line::from(vec![
         Span::styled(
             format!(" {} ", state.status),
             Style::default().fg(info),
@@ -174,8 +215,7 @@ pub fn render(
             "  Enter: send  Ctrl+C: exit  PgUp/PgDn: scroll",
             Style::default().fg(muted),
         ),
-    ])
-);
+    ]));
 
-frame.render_widget(status, areas[3]);
+    frame.render_widget(status, areas[3]);
 }

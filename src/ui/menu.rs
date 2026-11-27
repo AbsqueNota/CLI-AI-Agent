@@ -11,7 +11,7 @@ use crossterm::event::{
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{
         Block,
@@ -27,13 +27,6 @@ use crate::ui::{
     terminal::TerminalSession,
     theme::AppTheme,
 };
-
-fn to_color(color: colored::Color) -> Color {
-    match color {
-        colored::Color::TrueColor { r, g, b } => Color::Rgb(r, g, b),
-        _ => Color::Reset,
-    }
-}
 
 fn draw_select(
     frame: &mut Frame<'_>,
@@ -61,9 +54,9 @@ fn draw_select(
         ])
         .split(area);
 
-    let main = to_color(theme.palette.main);
-    let muted = to_color(theme.palette.muted);
-    let default = to_color(theme.palette.default);
+    let main = theme.palette.main;
+    let muted = theme.palette.muted;
+    let default = theme.palette.default;
 
     let header = Paragraph::new(Line::from(vec![
         Span::styled(
@@ -212,9 +205,9 @@ fn draw_input(
 ) {
     let area = frame.area();
 
-    let main = to_color(theme.palette.main);
-    let default = to_color(theme.palette.default);
-    let muted = to_color(theme.palette.muted);
+    let main = theme.palette.main;
+    let default = theme.palette.default;
+    let muted = theme.palette.muted;
 
     let areas = Layout::default()
         .direction(Direction::Vertical)
@@ -321,8 +314,8 @@ fn draw_confirm(
 ) {
     let area = frame.area();
 
-    let main = to_color(theme.palette.main);
-    let muted = to_color(theme.palette.muted);
+    let main = theme.palette.main;
+    let muted = theme.palette.muted;
 
     let choice = if default {
         "[Y]es / No"
