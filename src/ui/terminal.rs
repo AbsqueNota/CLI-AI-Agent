@@ -1,3 +1,4 @@
+pub mod event_reader;
 use std::io::{self, Stdout};
 
 use crossterm::{

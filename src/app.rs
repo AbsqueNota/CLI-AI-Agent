@@ -1,6 +1,8 @@
 pub mod config;
 pub mod state;
 pub mod commands;
+pub mod events;
+pub mod dispatcher;
 
 use crate::ui::TerminalUi;
 
