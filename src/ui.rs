@@ -7,6 +7,7 @@ pub mod state;
 pub mod renderer;
 pub mod menu;
 pub mod input;
+pub mod dialog;
 
 use anyhow::{anyhow, Result};
 use std::{
