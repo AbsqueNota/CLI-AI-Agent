@@ -92,19 +92,11 @@ pub fn render(
     let mut lines = Vec::new();
 
     for message in &state.messages {
-        message_lines(
-            message,
-            &mut lines,
-            theme
-        );
+        message_lines(message, &mut lines, theme);
     }
     
-    for message in state.messages.iter().chain(state.notices.iter()) {
-        message_lines(
-            message,
-            &mut lines,
-            theme,
-        );
+    for notice in &state.notices {
+        message_lines(notice, &mut lines, theme);
     }
     // Active agents
 
