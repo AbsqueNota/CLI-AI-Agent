@@ -4,20 +4,16 @@ use std::{
     collections::VecDeque,
 };
 use crossterm::event::{
-    self,
-    Event,
     KeyCode,
     KeyEvent,
-    KeyModifiers,
 };
-
 use tokio::{
     sync::{mpsc, oneshot},
     task::JoinHandle,
     time::{interval, MissedTickBehavior},
 };
-
 use crate::ui::{
+    input::{InputEdit},
     state::{
         AgentPhase,
         AgentViewState,
@@ -38,11 +34,19 @@ const UI_FRAME_INTERVAL: Duration = Duration::from_millis(33);
 #[derive(Debug)]
 pub enum UiAction {
     Submit(String),
+    Interrupt,
     Exit,
 }
 
 #[derive(Debug)]
 pub enum UiEvent {
+    Key(KeyEvent),
+
+    Resize {
+        width: u16,
+        height: u16,
+    },
+
     Started {
         agent_id: AgentId,
         model_id: String,
@@ -190,6 +194,20 @@ impl UiActorState {
         key: KeyEvent,
         action_tx: &mpsc::Sender<UiAction>,
     ) {
+        let ctrl = key.modifiers.contains(
+            crossterm::event::KeyModifiers::CONTROL
+        );
+    
+        if ctrl && key.code == KeyCode::Char('c') {
+            let _ = action_tx.send(UiAction::Interrupt).await;
+            return;
+        }
+    
+        if ctrl && key.code == KeyCode::Char('q') {
+            let _ = action_tx.send(UiAction::Exit).await;
+            return;
+        }
+
         if self.ui.active_agents() > 0 {
             match key.code {
                 KeyCode::PageUp => self.ui.scroll_up(10),
@@ -197,90 +215,47 @@ impl UiActorState {
                 KeyCode::End => self.ui.scroll_to_bottom(),
                 _ => {}
             }
-
+    
             return;
         }
-
-        if key.modifiers.contains(KeyModifiers::CONTROL)
-            && key.code == KeyCode::Char('c')
-        {
-            let _ = action_tx.send(UiAction::Exit).await;
-            return;
-        }
-
-        match key.code {
-            KeyCode::Char(character)
-                if !key.modifiers.contains(KeyModifiers::CONTROL)
-                    && !key.modifiers.contains(KeyModifiers::ALT) =>
-            {
-                self.ui.input.push(character);
-            }
-
-            KeyCode::Backspace => {
-                self.ui.input.pop();
-            }
-
-            KeyCode::Delete => {
-                self.ui.input.clear();
-            }
-
-            KeyCode::Esc => {
-                self.ui.input.clear();
-            }
-
-            KeyCode::Enter => {
-                let input = std::mem::take(&mut self.ui.input);
-
+    
+        match self.ui.input.handle_edit_key(key) {
+            InputEdit::Submit => {
+                let input = self.ui.input.take();
                 let trimmed = input.trim();
-
+    
                 if trimmed.is_empty() {
                     return;
                 }
-
+    
                 let message = trimmed.to_string();
-
+    
                 self.ui.push_message(
                     MessageRole::User,
                     message.clone(),
                 );
-
+    
                 self.ui.set_status("Processing");
-
+    
                 let _ = action_tx
                     .send(UiAction::Submit(message))
                     .await;
             }
-
+    
+            InputEdit::Cancel => {
+                self.ui.input.clear();
+            }
+    
+            InputEdit::Changed
+            | InputEdit::Ignored => {}
+        }
+    
+        match key.code {
             KeyCode::PageUp => self.ui.scroll_up(10),
             KeyCode::PageDown => self.ui.scroll_down(10),
             KeyCode::End => self.ui.scroll_to_bottom(),
-
             _ => {}
         }
-    }
-
-    async fn handle_terminal_events(
-        &mut self,
-        action_tx: &mpsc::Sender<UiAction>,
-    ) -> io::Result<()> {
-        while event::poll(Duration::ZERO)? {
-            match event::read()? {
-                Event::Key(key) => {
-                    // Не обрабатываем key-release события.
-                    if key.kind == crossterm::event::KeyEventKind::Release {
-                        continue;
-                    }
-
-                    self.handle_key(key, action_tx).await;
-                }
-
-                Event::Resize(_, _) => {}
-
-                _ => {}
-            }
-        }
-
-        Ok(())
     }
 
     async fn run(
@@ -305,6 +280,14 @@ impl UiActorState {
                     };
 
                     match event {
+                        UiEvent::Key(key) => {
+                            self.handle_key(key, &action_tx).await;
+                            self.draw(&theme)?;
+                        }
+                        
+                        UiEvent::Resize { .. } => {
+                            self.draw(&theme)?;
+                        }
                         UiEvent::Started {
                             agent_id,
                             model_id,
@@ -404,7 +387,6 @@ impl UiActorState {
 
                 _ = ticker.tick() => {
                     if self.terminal.is_some() {
-                        self.handle_terminal_events(&action_tx).await?;
                         self.draw(&theme)?;
                     }
                 }

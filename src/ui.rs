@@ -46,6 +46,34 @@ impl TerminalUi {
         }
     }
 
+    pub async fn send_key(
+        &self,
+        key: crossterm::event::KeyEvent,
+    ) -> Result<()> {
+        self.mpsc_ui
+            .sender()
+            .send(UiEvent::Key(key))
+            .await?;
+    
+        Ok(())
+    }
+    
+    pub async fn send_resize(
+        &self,
+        width: u16,
+        height: u16,
+    ) -> Result<()> {
+        self.mpsc_ui
+            .sender()
+            .send(UiEvent::Resize {
+                width,
+                height,
+            })
+            .await?;
+    
+        Ok(())
+    }
+    
     // ---- Chat ----
 
     pub fn start_chat(

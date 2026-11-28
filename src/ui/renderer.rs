@@ -188,7 +188,7 @@ pub fn render(
 
     // Input
 
-    let input = Paragraph::new(state.input.as_str())
+    let input = Paragraph::new(state.input.value())
         .style(Style::default().fg(default))
         .block(
             Block::default()

@@ -1,8 +1,7 @@
-
 use std::collections::{HashMap, VecDeque};
-
 use rig::message::Message;
 use serde_json::Value;
+use crate::ui::input::Input;
 
 pub type AgentId = String;
 
@@ -55,15 +54,11 @@ impl AgentViewState {
 
 #[derive(Debug)]
 pub struct UiState {
-    // История диалога из AppState.
     pub messages: VecDeque<ChatMessage>,
-
-    // Служебные уведомления UI, не сохраняемые в ChatSession.
-    pub notices: VecDeque<ChatMessage>,
-
-    pub input: String,
-    pub status: String,
-    pub agents: HashMap<AgentId, AgentViewState>,
+    pub notices:  VecDeque<ChatMessage>,
+    pub input:    Input,
+    pub status:   String,
+    pub agents:   HashMap<AgentId, AgentViewState>,
     pub scroll_offset: u16,
 }
 
@@ -71,10 +66,10 @@ impl Default for UiState {
     fn default() -> Self {
         Self {
             messages: VecDeque::new(),
-            notices: VecDeque::new(),
-            input: String::new(),
-            status: String::from("Ready"),
-            agents: HashMap::new(),
+            notices:  VecDeque::new(),
+            input:    Input::new(),
+            status:   String::from("Ready"),
+            agents:   HashMap::new(),
             scroll_offset: 0,
         }
     }
