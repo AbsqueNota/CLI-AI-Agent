@@ -24,6 +24,7 @@ use crate::{
 };
 
 pub fn spawn_agent(
+    agent_id: String,
     provider: std::sync::Arc<dyn LlmProvider>,
     model: Model,
     history: Vec<Message>,
@@ -31,7 +32,6 @@ pub fn spawn_agent(
     tx: mpsc::Sender<AppEvent>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
-        let agent_id = Uuid::now_v7().to_string();
         let model_id = model.id.clone();
         let start = Instant::now();
 
@@ -40,17 +40,13 @@ pub fn spawn_agent(
             model_id: model_id.clone(),
         }).await;
 
-        let agent = match AgentFactory::build(
-            &*provider,
-            &model,
-        ) {
+        let agent = match AgentFactory::build(&*provider, &model) {
             Ok(agent) => agent,
             Err(error) => {
                 let _ = tx.send(AppEvent::AgentFailed {
                     agent_id,
                     error: format!("{model_id}: {error:#}"),
                 }).await;
-
                 return;
             }
         };
@@ -65,10 +61,7 @@ pub fn spawn_agent(
         while let Some(item) = stream.next().await {
             match item {
                 Ok(MultiTurnStreamItem::StreamAssistantItem(
-                    StreamItem::Event(StreamEvent::Reasoning {
-                        text,
-                        ..
-                    }),
+                    StreamItem::Event(StreamEvent::Reasoning { text, .. }),
                 )) => {
                     let _ = tx.send(AppEvent::AgentReasoning {
                         agent_id: agent_id.clone(),
@@ -77,10 +70,7 @@ pub fn spawn_agent(
                 }
 
                 Ok(MultiTurnStreamItem::StreamAssistantItem(
-                    StreamItem::Event(StreamEvent::Text {
-                        text,
-                        ..
-                    }),
+                    StreamItem::Event(StreamEvent::Text { text, .. }),
                 )) => {
                     let _ = tx.send(AppEvent::AgentChunk {
                         agent_id: agent_id.clone(),
@@ -121,7 +111,6 @@ pub fn spawn_agent(
                         agent_id: agent_id.clone(),
                         error: format!("{model_id}: {error}"),
                     }).await;
-
                     return;
                 }
 

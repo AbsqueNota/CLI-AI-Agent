@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
 use std::sync::Arc;
-
+use uuid::Uuid;
 use tokio::{
     sync::mpsc,
     task::JoinHandle,
@@ -75,6 +75,8 @@ impl Dispatcher {
             bail!("An agent is already running");
         }
 
+        let agent_id = Uuid::now_v7().to_string();
+
         let provider: Arc<dyn LlmProvider> =
             Arc::clone(&state.provider);
 
@@ -82,6 +84,7 @@ impl Dispatcher {
         let history = state.session.history.clone();
 
         let task = spawn_agent(
+            agent_id.clone(),
             provider,
             model,
             history,
@@ -90,7 +93,7 @@ impl Dispatcher {
         );
 
         self.active = Some(ActiveAgent {
-            id: String::new(),
+            id: agent_id,
             task,
         });
 
@@ -116,17 +119,19 @@ impl Dispatcher {
     pub async fn on_agent_terminal(
         &mut self,
         agent_id: &str,
-    ) {
+    ) -> bool {
         let matches = self.active
             .as_ref()
-            .is_some_and(|active| {
-                active.id == agent_id
-            });
-
-        if matches {
-            if let Some(active) = self.active.take() {
-                let _ = active.task.await;
-            }
+            .is_some_and(|active| active.id == agent_id);
+    
+        if !matches {
+            return false;
         }
+    
+        if let Some(active) = self.active.take() {
+            let _ = active.task.await;
+        }
+    
+        true
     }
 }
