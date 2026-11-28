@@ -29,6 +29,7 @@ pub enum DialogResult {
     Selected(Option<usize>),
     Input(Option<String>),
     Confirm(bool),
+    Cancelled,
 }
 
 pub struct DialogRequest {
@@ -80,6 +81,7 @@ impl DialogClient {
             max_length,
         }).await? {
             DialogResult::Selected(value) => Ok(value),
+            DialogResult::Cancelled => Ok(None),
             _ => anyhow::bail!("Unexpected Dialog result"),
         }
     }
@@ -95,6 +97,7 @@ impl DialogClient {
             allow_empty,
         }).await? {
             DialogResult::Input(value) => Ok(value),
+            DialogResult::Cancelled => Ok(None),
             _ => anyhow::bail!("Unexpected Dialog result"),
         }
     }
@@ -103,12 +106,13 @@ impl DialogClient {
         &self,
         prompt: impl Into<String>,
         default: bool,
-    ) -> anyhow::Result<bool> {
+    ) -> anyhow::Result<Option<bool>> {
         match self.request(DialogSpec::Confirm {
             prompt: prompt.into(),
             default,
         }).await? {
-            DialogResult::Confirm(value) => Ok(value),
+            DialogResult::Confirm(value) => Ok(Some(value)),
+            DialogResult::Cancelled => Ok(None),
             _ => anyhow::bail!("Unexpected Dialog result"),
         }
     }

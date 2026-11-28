@@ -12,7 +12,13 @@ pub struct Input {
     cursor: usize,
     focused: bool,
 }
-
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputEdit {
+    Ignored,
+    Changed,
+    Submit,
+    Cancel,
+}
 impl Input {
     pub fn new() -> Self {
         Self {
@@ -86,6 +92,11 @@ impl Input {
         self.value.replace_range(start..end, "");
     }
 
+    pub fn set_value(&mut self, value: impl Into<String>) {
+        self.value = value.into();
+        self.cursor = self.value.chars().count();
+    }
+    
     pub fn handle_key(
         &mut self,
         key: KeyEvent,
@@ -93,77 +104,105 @@ impl Input {
         if !self.focused {
             return None;
         }
-
+    
         let ctrl = key.modifiers.contains(
             KeyModifiers::CONTROL
         );
-
-        let alt = key.modifiers.contains(
-            KeyModifiers::ALT
-        );
-
+    
         if ctrl && key.code == KeyCode::Char('c') {
             return Some(AppCommand::Interrupt);
         }
-
+    
         if ctrl && key.code == KeyCode::Char('q') {
             return Some(AppCommand::Exit);
         }
+    
+        match self.handle_edit_key(key) {
+            InputEdit::Submit => {
+                let value = self.take();
+                let value = value.trim();
+    
+                if value.is_empty() {
+                    None
+                } else {
+                    Some(AppCommand::Submit(value.to_string()))
+                }
+            }
+    
+            InputEdit::Cancel => {
+                Some(AppCommand::Interrupt)
+            }
+    
+            _ => None,
+        }
+    }
 
+    pub fn handle_edit_key(
+        &mut self,
+        key: KeyEvent,
+    ) -> InputEdit {
+        if !self.focused {
+            return InputEdit::Ignored;
+        }
+    
+        let ctrl = key.modifiers.contains(
+            KeyModifiers::CONTROL
+        );
+    
+        let alt = key.modifiers.contains(
+            KeyModifiers::ALT
+        );
+    
         match key.code {
             KeyCode::Char('u') if ctrl => {
                 self.clear();
+                InputEdit::Changed
             }
-
+    
             KeyCode::Char(character)
                 if !ctrl && !alt =>
             {
                 self.insert(character);
+                InputEdit::Changed
             }
-
+    
             KeyCode::Left => {
                 self.cursor = self.cursor.saturating_sub(1);
+                InputEdit::Changed
             }
-
+    
             KeyCode::Right => {
                 self.cursor = (self.cursor + 1)
                     .min(self.value.chars().count());
+    
+                InputEdit::Changed
             }
-
+    
             KeyCode::Home => {
                 self.cursor = 0;
+                InputEdit::Changed
             }
-
+    
             KeyCode::End => {
                 self.cursor = self.value.chars().count();
+                InputEdit::Changed
             }
-
+    
             KeyCode::Backspace => {
                 self.backspace();
+                InputEdit::Changed
             }
-
+    
             KeyCode::Delete => {
                 self.delete();
+                InputEdit::Changed
             }
-
-            KeyCode::Enter => {
-                let value = self.take();
-                let value = value.trim();
-
-                if !value.is_empty() {
-                    return Some(AppCommand::Submit(
-                        value.to_string()
-                    ));
-                }
-            }
-
-            KeyCode::Esc => {
-                return Some(AppCommand::Interrupt);
-            }
-
-            _ => {}
+    
+            KeyCode::Enter => InputEdit::Submit,
+    
+            KeyCode::Esc => InputEdit::Cancel,
+    
+            _ => InputEdit::Ignored,
         }
-
-        None
-    }
+    }  
 }

@@ -1,15 +1,21 @@
-use tokio::sync::oneshot;
 
-use crate::ui::dialog::{
-    DialogRequest,
-    DialogResult,
-    DialogSpec,
-};
+use tokio::sync::oneshot;
 
 use crossterm::event::{
     KeyCode,
     KeyEvent,
-    KeyModifiers,
+};
+
+use crate::ui::{
+    dialog::{
+        DialogRequest,
+        DialogResult,
+        DialogSpec,
+    },
+    input::{
+        Input,
+        InputEdit,
+    },
 };
 
 pub enum DialogAction {
@@ -21,7 +27,8 @@ pub enum DialogAction {
 pub struct ActiveDialog {
     pub spec: DialogSpec,
     pub selection: usize,
-    pub value: String,
+
+    input: Input,
 
     reply: Option<
         oneshot::Sender<Result<DialogResult, String>>
@@ -31,21 +38,40 @@ pub struct ActiveDialog {
 impl ActiveDialog {
     pub fn new(request: DialogRequest) -> Self {
         let selection = match &request.spec {
-            DialogSpec::Select { selected, .. } => *selected,
+            DialogSpec::Select {
+                selected,
+                items,
+                ..
+            } => {
+                if items.is_empty() {
+                    0
+                } else {
+                    (*selected).min(items.len() - 1)
+                }
+            }
             _ => 0,
         };
 
-        let value = match &request.spec {
-            DialogSpec::Input { value, .. } => value.clone(),
-            _ => String::new(),
-        };
+        let mut input = Input::new();
+
+        if let DialogSpec::Input { value, .. } = &request.spec {
+            input.set_value(value.clone());
+        }
 
         Self {
             spec: request.spec,
             selection,
-            value,
+            input,
             reply: Some(request.reply),
         }
+    }
+
+    pub fn value(&self) -> &str {
+        self.input.value()
+    }
+
+    pub fn cursor(&self) -> usize {
+        self.input.cursor()
     }
 
     pub fn complete(
@@ -60,22 +86,8 @@ impl ActiveDialog {
     pub fn cancel(
         mut self,
     ) {
-        let result = match self.spec {
-            DialogSpec::Select { .. } => {
-                DialogResult::Selected(None)
-            }
-
-            DialogSpec::Input { .. } => {
-                DialogResult::Input(None)
-            }
-
-            DialogSpec::Confirm { .. } => {
-                DialogResult::Confirm(false)
-            }
-        };
-
         if let Some(reply) = self.reply.take() {
-            let _ = reply.send(Ok(result));
+            let _ = reply.send(Ok(DialogResult::Cancelled));
         }
     }
 
@@ -95,7 +107,9 @@ impl ActiveDialog {
                     );
                 }
 
-                let page = max_length.unwrap_or(8).max(1);
+                let page = max_length
+                    .unwrap_or(8)
+                    .max(1);
 
                 match key.code {
                     KeyCode::Up => {
@@ -122,9 +136,8 @@ impl ActiveDialog {
                     }
 
                     KeyCode::PageDown => {
-                        self.selection =
-                            (self.selection + page)
-                                .min(items.len() - 1);
+                        self.selection = (self.selection + page)
+                            .min(items.len() - 1);
                     }
 
                     KeyCode::Enter => {
@@ -147,52 +160,39 @@ impl ActiveDialog {
                 allow_empty,
                 ..
             } => {
-                let ctrl = key.modifiers
-                    .contains(KeyModifiers::CONTROL);
-
-                let alt = key.modifiers
-                    .contains(KeyModifiers::ALT);
-
-                match key.code {
-                    KeyCode::Char('u') if ctrl => {
-                        self.value.clear();
-                    }
-
-                    KeyCode::Char(c) if !ctrl && !alt => {
-                        self.value.push(c);
-                    }
-
-                    KeyCode::Backspace => {
-                        self.value.pop();
-                    }
-
-                    KeyCode::Enter => {
-                        if *allow_empty || !self.value.is_empty() {
+                match self.input.handle_edit_key(key) {
+                    InputEdit::Submit => {
+                        if *allow_empty
+                            || !self.input.value().is_empty()
+                        {
                             return DialogAction::Complete(
                                 DialogResult::Input(
-                                    Some(self.value.clone())
+                                    Some(self.input.value().to_string())
                                 )
                             );
                         }
                     }
 
-                    KeyCode::Esc => {
+                    InputEdit::Cancel => {
                         return DialogAction::Cancel;
                     }
 
-                    _ => {}
+                    InputEdit::Changed
+                    | InputEdit::Ignored => {}
                 }
             }
 
             DialogSpec::Confirm { default, .. } => {
                 match key.code {
-                    KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    KeyCode::Char('y')
+                    | KeyCode::Char('Y') => {
                         return DialogAction::Complete(
                             DialogResult::Confirm(true)
                         );
                     }
 
-                    KeyCode::Char('n') | KeyCode::Char('N') => {
+                    KeyCode::Char('n')
+                    | KeyCode::Char('N') => {
                         return DialogAction::Complete(
                             DialogResult::Confirm(false)
                         );
@@ -214,5 +214,60 @@ impl ActiveDialog {
         }
 
         DialogAction::Continue
+    }
+}
+
+#[derive(Default)]
+pub struct DialogState {
+    active: Option<ActiveDialog>,
+}
+
+impl DialogState {
+    pub fn is_active(&self) -> bool {
+        self.active.is_some()
+    }
+
+    pub fn active(&self) -> Option<&ActiveDialog> {
+        self.active.as_ref()
+    }
+
+    pub fn open(
+        &mut self,
+        request: DialogRequest,
+    ) -> Result<(), DialogRequest> {
+        if self.active.is_some() {
+            return Err(request);
+        }
+
+        self.active = Some(ActiveDialog::new(request));
+
+        Ok(())
+    }
+
+    pub fn handle_key(
+        &mut self,
+        key: KeyEvent,
+    ) -> bool {
+        let Some(active) = self.active.as_mut() else {
+            return false;
+        };
+
+        match active.handle_key(key) {
+            DialogAction::Continue => {}
+
+            DialogAction::Complete(result) => {
+                if let Some(active) = self.active.take() {
+                    active.complete(result);
+                }
+            }
+
+            DialogAction::Cancel => {
+                if let Some(active) = self.active.take() {
+                    active.cancel();
+                }
+            }
+        }
+
+        true
     }
 }
